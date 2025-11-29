@@ -1,6 +1,16 @@
+import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import Sidebar from "@/components/Sidebar";
 import React, { ReactNode } from "react";
+
+
+export const metadata: Metadata = {
+  title: "Grace Meet",
+  description: "Video Calling App",
+  icons: {
+    icon: '/icons/white-logo.png'
+  }
+};
 
 export default function HomeLayout({ children }: { children: ReactNode }) {
   return (
