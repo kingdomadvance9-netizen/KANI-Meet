@@ -46,7 +46,6 @@
   -webkit-backdrop-filter: blur(8px);
 }
 
-
 /* ==== clerk class override ===== */
 
 .cl-userButtonPopoverActionButtonIcon {
@@ -79,9 +78,6 @@
   color: white !important;
 }
 
-
-
-
 /* =============================== */
 
 @layer utilities {
@@ -95,7 +91,18 @@
   .bg-hero {
     background-image: var(--bg-hero);
   }
+
+  .bg-hero-courageous{
+    background-image: var(--bg-hero-courageous);
+  }
+  .bg-hero-wisdom{
+    background-image: var(--bg-hero-wisdom);
+  }
+
+  
 }
+
+
 
 /* Dark class variant */
 @custom-variant dark (&:is(.dark *));
@@ -177,6 +184,36 @@
 
   /* Background images */
   --bg-hero: url("/images/hero-background.png");
+  --bg-hero-courageous: url("/images/Courageous-hero.jpg");
+  --bg-hero-wisdom: url("/images/Wisdom-hero.jpg");
+}
+
+/* =====================================================
+   BUTTONS
+   ===================================================== */
+
+.btn {
+  @apply w-full bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm;
+}
+
+.btn-red {
+  @apply w-full bg-red-600 hover:bg-red-500 py-2 rounded-lg text-sm;
+}
+
+.btn-orange {
+  @apply w-full bg-orange-600 hover:bg-orange-500 py-2 rounded-lg text-sm;
+}
+
+.btn-green {
+  @apply w-full bg-green-600 hover:bg-green-500 py-2 rounded-lg text-sm;
+}
+
+.btn-sm {
+  @apply bg-gray-700 hover:bg-gray-600 p-1 rounded;
+}
+
+.btn-sm-red {
+  @apply bg-red-600 hover:bg-red-500 p-1 rounded;
 }
 
 /* =====================================================
@@ -286,8 +323,6 @@
     @apply bg-background text-foreground;
   }
 }
-
-
 
 /* =====================================================
    KEYFRAMES

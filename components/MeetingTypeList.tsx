@@ -51,12 +51,18 @@ const MeetingTypeList = () => {
       const startsAt = values.dateTime.toISOString();
       const description = values.description || "Instant Meeting";
 
-      await call.getOrCreate({
-        data: {
-          starts_at: startsAt,
-          custom: { description },
-        },
-      });
+     await call.getOrCreate({
+      data: {
+        starts_at: startsAt,
+        custom: { description },
+        members: [
+          { 
+            user_id: user.id, 
+            role: "admin" // Make the creator an admin/host
+          }
+        ],
+      },
+    });
 
       setCallDetail(call);
 
