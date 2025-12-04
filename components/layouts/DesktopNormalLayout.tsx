@@ -1,10 +1,16 @@
-import { ParticipantView } from "@stream-io/video-react-sdk";
+import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
 
-const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }) => {
+interface DesktopNormalLayoutProps {
+  sorted: StreamVideoParticipant[];
+  screenWidth: number;
+  activeSpeaker: StreamVideoParticipant | null;
+}
+
+const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }: DesktopNormalLayoutProps) => {
   const count = sorted.length;
 
   // Highlight active speaker
-  const getGlowClass = (p) =>
+  const getGlowClass = (p: StreamVideoParticipant) =>
     p.sessionId === activeSpeaker?.sessionId
       ? "ring-4 ring-blue-400 shadow-blue-300 shadow-xl scale-[1.03] transition-all duration-300"
       : "";

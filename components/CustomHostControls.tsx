@@ -44,34 +44,7 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
   const participants = useParticipants();
   const [search, setSearch] = useState("");
 
-  // Listen for member updates
-  useEffect(() => {
-    if (!call) return;
 
-    const handleMemberUpdate = (event: StreamVideoEvent) => {
-      // event structure can vary — attempt to extract helpful info
-      try {
-        const userId =
-          (event.user && (event.user.id || event.user.user_id)) ||
-          event.payload?.user_id ||
-          "Participant";
-
-        // If the event contains updated permissions or role details, show a toast
-        // We keep this message short to avoid flooding the UI
-        toast(`${userId} was updated`);
-        // The SDK hooks (useParticipants) will re-render UI with fresh data anyway
-      } catch (err) {
-        // fallback logging — don't break UI if event shape is unexpected
-        console.log("member_updated event:", event);
-      }
-    };
-
-    call.on("call.member_updated", handleMemberUpdate);
-
-    return () => {
-      call.off("call.member_updated", handleMemberUpdate);
-    };
-  }, [call]);
 
   if (!call || !canUpdatePermissions) return null;
 

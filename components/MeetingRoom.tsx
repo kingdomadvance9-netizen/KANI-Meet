@@ -38,8 +38,8 @@ const MeetingRoom = () => {
     const handleMemberUpdate = (event: StreamVideoEvent) => {
       console.log('Member updated event:', event);
       
-      // Force re-render when local user's role changes
-      if (event.user?.id === localParticipant?.userId) {
+      // Type guard: check if event has user property before accessing it
+      if ('user' in event && event.user && event.user.id === localParticipant?.userId) {
         console.log('Local participant role updated:', event);
         forceUpdate({});
       }

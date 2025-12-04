@@ -1,8 +1,14 @@
-import { ParticipantView } from "@stream-io/video-react-sdk";
+import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
 
-const MobileNormalLayout = ({ sorted, activeSpeaker }) => {
+interface MobileNormalLayoutProps {
+  sorted: StreamVideoParticipant[];
+  activeSpeaker: StreamVideoParticipant | null;
+  screenWidth: number;
+}
 
-  const getGlowClass = (p) =>
+const MobileNormalLayout = ({ sorted, activeSpeaker, screenWidth }: MobileNormalLayoutProps) => {
+
+  const getGlowClass = (p: StreamVideoParticipant) =>
     p.sessionId === activeSpeaker?.sessionId
       ? "ring-4 ring-blue-400 shadow-blue-300 shadow-xl scale-[1.03] transition-all duration-300"
       : "";

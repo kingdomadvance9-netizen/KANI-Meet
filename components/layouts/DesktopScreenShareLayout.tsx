@@ -1,7 +1,13 @@
-import { ParticipantView } from "@stream-io/video-react-sdk";
+import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
 
-const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }) => {
-  const getGlowClass = (p) =>
+interface DesktopScreenShareLayoutProps {
+  participants: StreamVideoParticipant[];
+  screenSharer: StreamVideoParticipant;
+  activeSpeaker: StreamVideoParticipant | null;
+}
+
+const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }: DesktopScreenShareLayoutProps) => {
+  const getGlowClass = (p: StreamVideoParticipant) =>
     p.sessionId === activeSpeaker?.sessionId
       ? "ring-4 ring-blue-400 shadow-blue-300 shadow-xl scale-[1.03] transition-all duration-300"
       : "";
