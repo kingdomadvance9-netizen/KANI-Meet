@@ -33,7 +33,7 @@ const MeetingRoom = () => {
 
   // Listen for member updates that affect the local user
   useEffect(() => {
-    if (!call) return;
+    if (!call) return;  
 
     const handleMemberUpdate = (event: StreamVideoEvent) => {  
       console.log('Member updated event:', event);

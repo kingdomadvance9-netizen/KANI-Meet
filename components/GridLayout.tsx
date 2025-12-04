@@ -50,7 +50,7 @@ const GridLayout = () => {
   // Sorted for normal mode (active speaker first)
   const sorted = useMemo(() => {
     if (!isScreenSharing && activeSpeaker) {
-      return [
+      return [ 
         activeSpeaker,
         ...participants.filter((p) => p.sessionId !== activeSpeaker.sessionId),
       ];
