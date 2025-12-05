@@ -1,62 +1,112 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useCallStateHooks } from "@stream-io/video-react-sdk";
 
-/**
- * MeetingRoomWrapper:
- * - Prevents screen from automatically turning off (Wake Lock API)
- * - Allows background audio (Android Chrome)
- * - Restores wake lock when user returns to the tab
- */
 const MeetingRoomWrapper = ({ children }: { children: React.ReactNode }) => {
   const wakeLockRef = useRef<any>(null);
+  const miniRef = useRef<HTMLDivElement>(null);
 
-  // Request screen wake lock
+  const [minimized, setMinimized] = useState(false);
+  const [drag, setDrag] = useState({ x: 20, y: 80 });
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Active speaker glow (Stream hook)
+  //   const { useActiveSpeaker } = useCallStateHooks();
+  //   const activeSpeaker = useActiveSpeaker();
+  // Dominant speaker glow (Stream hook)
+  const { useDominantSpeaker } = useCallStateHooks();
+  const dominantSpeaker = useDominantSpeaker();
+
+  // WakeLock
   const requestWakeLock = async () => {
     try {
-      if ("wakeLock" in navigator && navigator.wakeLock.request) {
+      if ("wakeLock" in navigator) {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
-        // Re-acquire lock if it is lost
-        wakeLockRef.current.addEventListener("release", () => {
-          console.log("Wake Lock was released");
-        });
-        console.log("Wake Lock active");
       }
-    } catch (err) {
-      console.warn("WakeLock error:", err);
-    }
+    } catch {}
   };
 
-  // Enable audio in background (Android Chrome)
+  // Background audio (Android Chrome)
   const enableBackgroundAudio = () => {
     const audio = document.createElement("audio");
-    audio.src = "/silent.mp3"; // create blank 1-second audio file
+    audio.src = "/silent.mp3";
     audio.loop = true;
     audio.play().catch(() => {});
   };
 
   useEffect(() => {
     requestWakeLock();
-    enableBackgroundAudio(); // Optional: comment out if you don't want background audio
+    enableBackgroundAudio();
 
-    // Re-enable when returning to the tab
-    const onVisibilityChange = () => {
-      if (!document.hidden) {
-        requestWakeLock();
-      }
+    const handleVis = () => {
+      if (!document.hidden) requestWakeLock();
     };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("visibilitychange", handleVis);
 
     return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release().catch(() => {});
-      }
+      document.removeEventListener("visibilitychange", handleVis);
+      wakeLockRef.current?.release?.();
     };
   }, []);
 
-  return <div className="w-full h-full">{children}</div>;
+  // Dragging logic for mini window
+  const onDragStart = () => setIsDragging(true);
+  const onDragEnd = () => setIsDragging(false);
+
+  const onDrag = (e: any) => {
+    if (!isDragging) return;
+    setDrag({
+      x: Math.max(10, e.clientX - 50),
+      y: Math.max(10, e.clientY - 50),
+    });
+  };
+
+  return (
+    <div onMouseMove={onDrag} className="w-full h-full relative">
+      {/* FULL MEETING UI */}
+      {!minimized && (
+        <div className="w-full h-full">
+          {children}
+
+          {/* Minimize Button */}
+          <button
+            onClick={() => setMinimized(true)}
+            className="absolute top-4 right-4 z-50 bg-black/60 text-white px-3 py-1 rounded-full"
+          >
+            Minimize
+          </button>
+        </div>
+      )}
+
+      {/* MINI FLOATING OVERLAY */}
+      {minimized && (
+        <div
+          ref={miniRef}
+          onMouseDown={onDragStart}
+          onMouseUp={onDragEnd}
+          onClick={() => {
+            if (!isDragging) setMinimized(false);
+          }}
+          className={`
+            fixed z-50 cursor-pointer rounded-full
+            overflow-hidden shadow-lg transition-all duration-300
+            ${dominantSpeaker ? "ring-4 ring-blue-400" : ""}
+          `}
+          style={{
+            width: minimized ? 50 : 180,
+            height: minimized ? 50 : 180,
+            left: drag.x,
+            top: drag.y,
+          }}
+        >
+          <div className="w-full h-full bg-black/50 flex items-center justify-center text-white">
+            GM
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default MeetingRoomWrapper;
