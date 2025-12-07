@@ -1,10 +1,8 @@
 "use client";
 
-import {
-  useCallStateHooks,
-  hasScreenShare,
-} from "@stream-io/video-react-sdk";
+import { useCallStateHooks, hasScreenShare } from "@stream-io/video-react-sdk";
 import { useEffect, useMemo, useState } from "react";
+import { useAutoPictureInPicture } from "../hooks/useAutoPictureInPicture";
 
 // COMPONENTS
 import DesktopNormalLayout from "./layouts/DesktopNormalLayout";
@@ -19,6 +17,9 @@ const GridLayout = () => {
   const participants = useParticipants();
   const dominantSpeaker = useDominantSpeaker();
   const isScreenSharing = useHasOngoingScreenShare();
+
+  // Auto PiP hook
+  const { manualTogglePiP } = useAutoPictureInPicture();
 
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1024
@@ -50,22 +51,37 @@ const GridLayout = () => {
   // Sorted for normal mode (active speaker first)
   const sorted = useMemo(() => {
     if (!isScreenSharing && activeSpeaker) {
-      return [ 
+      return [
         activeSpeaker,
         ...participants.filter((p) => p.sessionId !== activeSpeaker.sessionId),
       ];
     }
     return participants;
-  }, [participants, activeSpeaker, isScreenSharing]);  
+  }, [participants, activeSpeaker, isScreenSharing]);
 
   const isScreenMode = isScreenSharing && screenSharer;
   const isMobile = screenWidth < 1024;
 
   return (
     <div className="w-full h-full p-2 overflow-y-auto overscroll-contain">
+      {/* Floating PiP Button */}
+      <button
+        onClick={manualTogglePiP}
+        disabled={!document.pictureInPictureEnabled}
+        className="fixed top-4 right-4 z-50 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full shadow-lg transition-all"
+        style={{
+          display: document.pictureInPictureEnabled ? "block" : "none",
+        }}
+      >
+        📺 PiP
+      </button>
       {/** MOBILE */}
       {isMobile && !isScreenMode && (
-        <MobileNormalLayout sorted={sorted} screenWidth={screenWidth} activeSpeaker={activeSpeaker} />
+        <MobileNormalLayout
+          sorted={sorted}
+          screenWidth={screenWidth}
+          activeSpeaker={activeSpeaker}
+        />
       )}
 
       {isMobile && isScreenMode && (
@@ -78,7 +94,11 @@ const GridLayout = () => {
 
       {/** DESKTOP */}
       {!isMobile && !isScreenMode && (
-        <DesktopNormalLayout sorted={sorted} screenWidth={screenWidth} activeSpeaker={activeSpeaker} />
+        <DesktopNormalLayout
+          sorted={sorted}
+          screenWidth={screenWidth}
+          activeSpeaker={activeSpeaker}
+        />
       )}
 
       {!isMobile && isScreenMode && (

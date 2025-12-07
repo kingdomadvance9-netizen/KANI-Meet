@@ -1,5 +1,5 @@
 import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
-import CustomParticipantViewUI from "../CustomParticipantViewUI";
+// import CustomParticipantViewUI from "../CustomParticipantViewUI";
 
 interface MobileNormalLayoutProps {
   sorted: StreamVideoParticipant[];
@@ -42,7 +42,7 @@ const MobileNormalLayout = ({ sorted, activeSpeaker, screenWidth }: MobileNormal
               participant={p}
               trackType="videoTrack"
               className="!w-full !h-full object-cover"
-              ParticipantViewUI={CustomParticipantViewUI}
+              // ParticipantViewUI={CustomParticipantViewUI}
             />
           </div>
         ))}
