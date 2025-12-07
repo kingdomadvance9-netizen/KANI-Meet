@@ -1,4 +1,5 @@
 import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
+import CustomParticipantViewUI from "../CustomParticipantViewUI";
 
 interface DesktopScreenShareLayoutProps {
   participants: StreamVideoParticipant[];
@@ -22,6 +23,7 @@ const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }:
             participant={screenSharer}
             trackType="screenShareTrack"
             className="!w-full !h-full object-cover"
+            ParticipantViewUI={CustomParticipantViewUI}
           />
         </div>
       </div>
@@ -43,6 +45,7 @@ const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }:
                 participant={p}
                 trackType="videoTrack"
                 className="!w-full !h-full object-cover"
+                ParticipantViewUI={CustomParticipantViewUI}
               />
             </div>
           ))}

@@ -3,22 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useCallStateHooks } from "@stream-io/video-react-sdk";
 
-
 // --- HELPER FUNCTION: WEB NOTIFICATIONS ---
-// Defined outside the component to avoid re-creation on every render.
 const notifyUser = () => {
-  if ('Notification' in window && Notification.permission === "granted") {
-    // Only send the notification if the user hasn't actively denied it
+  if ("Notification" in window && Notification.permission === "granted") {
     const notification = new Notification("Meeting Active!", {
       body: "Click to return to your Custom Meet stream.",
-      // IMPORTANT: Use the actual path to your application icon
-      icon: "/icons/Gm-White-logo.png", 
-      tag: "meet-return-notification" // Prevents multiple similar notifications
-    });
-    
-    // Auto-focus the tab when the user clicks the notification
-    notification.onclick = function() {
-        window.focus();
+      icon: "/icons/Gm-White-logo.png",
+      tag: "meet-return-notification",
+    }); // Auto-focus the tab when the user clicks the notification (works reliably on desktop)
+    notification.onclick = function () {
+      window.focus();
     };
   }
 };
@@ -33,127 +27,136 @@ const MeetingRoomWrapper = ({ children }: { children: React.ReactNode }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const { useDominantSpeaker } = useCallStateHooks();
-  const dominantSpeaker = useDominantSpeaker();
+  const dominantSpeaker = useDominantSpeaker(); // WakeLock
 
-  // WakeLock
-const requestWakeLock = async () => {
-  try {
-    if ("wakeLock" in navigator) {
-      // 1. Release any existing lock first
-      if (wakeLockRef.current) {
+  const requestWakeLock = async () => {
+    try {
+      if ("wakeLock" in navigator) {
+        if (wakeLockRef.current) {
           await wakeLockRef.current.release();
+        }
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        wakeLockRef.current.addEventListener("release", () => {
+          if (!document.hidden) requestWakeLock();
+        });
       }
-      
-      wakeLockRef.current = await navigator.wakeLock.request("screen");
-      
-      // 2. Add an event listener to re-request if the browser auto-releases it (e.g., error)
-      wakeLockRef.current.addEventListener('release', () => {
-        console.log('Wake Lock was released by the browser.');
-        // If it was released while the tab is visible, re-request it
-        if (!document.hidden) requestWakeLock();
-      });
-    }
-  } catch (e) {
+    } catch (e) {
       console.error("Wake Lock failed to acquire:", e);
-  }
-};
+    }
+  }; // Improved Background Audio with Media Session Actions
 
-  // Background audio (Android Chrome)
   const enableBackgroundAudio = () => {
-    if ('mediaSession' in navigator) {
+    // 1. Setup Media Session for proper system controls and longevity
+    if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'Active Meeting',
-        artist: 'Custom Meet',
+        title: "Active Meeting",
+        artist: "Custom Meet",
       });
       navigator.mediaSession.playbackState = "playing";
+
+      // Add action handlers
+      navigator.mediaSession.setActionHandler("play", () => {
+        const audio = document.getElementById(
+          "background-audio-trick"
+        ) as HTMLAudioElement;
+        audio?.play().catch(() => {});
+        navigator.mediaSession.playbackState = "playing";
+      });
+      navigator.mediaSession.setActionHandler("pause", () => {
+        const audio = document.getElementById(
+          "background-audio-trick"
+        ) as HTMLAudioElement;
+        audio?.pause();
+        navigator.mediaSession.playbackState = "paused";
+      });
+    } // 2. Fallback: Use silent audio track
+    let audio = document.getElementById(
+      "background-audio-trick"
+    ) as HTMLAudioElement;
+    if (!audio) {
+      audio = document.createElement("audio");
+      audio.id = "background-audio-trick";
+      audio.src = "/silent.mp3";
+      audio.loop = true;
+      audio.volume = 0.01;
+      document.body.appendChild(audio);
     }
-    
-    // Fallback for strict mobile background audio
-    const audio = document.createElement("audio");
-    audio.src = "/silent.mp3";
-    audio.loop = true;
-    audio.volume = 0.01; // Ensure volume is not zero, but very low
-    
-    // Play audio only after user interaction (optional, but safer)
+
     audio.play().catch((error) => {
-        // This is often an Autoplay error. It may start later.
-        console.warn("Autoplay blocked, background audio may be restricted.", error);
+      console.warn(
+        "Autoplay blocked, background audio may be restricted.",
+        error
+      );
     });
-};
+  }; // --- Core Effects (Mount & Cleanup) ---
 
- // --- Core Effects (Mount & Cleanup) ---
-    useEffect(() => {
-        // A. Request Notification permission early
-        if ('Notification' in window && Notification.permission !== 'granted') {
-            Notification.requestPermission();
-        }
+  useEffect(() => {
+    // A. Request Notification permission early
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
+    } // B. Activate Screen Wake Lock and Background Audio on mount
 
-        // B. Activate Screen Wake Lock and Background Audio on mount
+    requestWakeLock();
+    enableBackgroundAudio(); // C. Visibility Change Handler (The core logic)
+
+    const handleVis = () => {
+      const isHidden = document.hidden;
+      setShowOverlay(isHidden);
+
+      if (isHidden) {
+        // 1. Notify the user via OS notification (The true "pop-up")
+        notifyUser();
+        // Add PiP logic here if you want a visual element over other apps
+      } else {
+        // 2. Re-acquire WakeLock when returning to the tab
         requestWakeLock();
-        enableBackgroundAudio();
+      }
+    };
 
-        // C. Visibility Change Handler (The core logic)
-        const handleVis = () => {
-            const isHidden = document.hidden;
-            setShowOverlay(isHidden); // Show floating UI when tab is hidden
+    document.addEventListener("visibilitychange", handleVis); // D. Cleanup function runs on unmount
 
-            if (isHidden) {
-                // 1. Notify the user via OS notification
-                notifyUser(); 
-            } else {
-                // 2. Re-acquire WakeLock when returning to the tab
-                requestWakeLock();
-            }
-        };
+    return () => {
+      document.removeEventListener("visibilitychange", handleVis);
+      wakeLockRef.current?.release?.();
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = "paused";
+      }
+    };
+  }, []); // Dragging logic (No changes needed, but added centering fix from previous suggestion)
 
-        document.addEventListener("visibilitychange", handleVis);
-
-        // D. Cleanup function runs on unmount
-        return () => {
-            document.removeEventListener("visibilitychange", handleVis);
-            wakeLockRef.current?.release?.(); // Release the lock on unmount
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = "paused";
-            }
-        };
-    }, []);
-
-  // Dragging logic
   const onDragStart = () => setIsDragging(true);
   const onDragEnd = () => setIsDragging(false);
 
-const onDrag = (e: any) => {
+  const onDrag = (e: any) => {
     if (!isDragging) return;
-    const miniSize = 65; // Use the size of your mini-overlay
+    const miniSize = 65;
     const halfSize = miniSize / 2;
 
     setDrag({
-        // Set minimum boundary to 10px from edge
-        x: Math.max(10, e.clientX - halfSize), 
-        y: Math.max(10, e.clientY - halfSize),
+      x: Math.max(10, e.clientX - halfSize),
+      y: Math.max(10, e.clientY - halfSize),
     });
-};
+  };
 
   return (
     <div onMouseMove={onDrag} className="w-full h-full relative">
-
-      {/* FULL MEETING UI */}
-      {children}
-
-      {/* FLOATING MINI OVERLAY (appears only when tab hidden) */}
+            {/* FULL MEETING UI */}      {children}     {" "}
+      {/* FLOATING MINI OVERLAY (Will only appear if the browser window is visible) */}
+           {" "}
       {showOverlay && (
         <div
           ref={miniRef}
           onMouseDown={onDragStart}
           onMouseUp={onDragEnd}
           onClick={() => {
-            if (!isDragging) window.focus(); // return to tab
+            // This ensures clicking the in-browser overlay brings the tab into focus
+            if (!isDragging) window.focus();
           }}
           className={`
-            fixed z-[99999] cursor-pointer rounded-full 
-            shadow-lg overflow-hidden transition-all duration-300
-            ${dominantSpeaker ? "ring-4 ring-blue-400" : ""}
-          `}
+            fixed z-[99999] cursor-pointer rounded-full 
+            shadow-lg overflow-hidden transition-all duration-300
+            ${dominantSpeaker ? "ring-4 ring-blue-400" : ""}
+          `}
           style={{
             width: 65,
             height: 65,
@@ -161,11 +164,14 @@ const onDrag = (e: any) => {
             top: drag.y,
           }}
         >
+                   {" "}
           <div className="w-full h-full bg-black/60 flex items-center justify-center text-white text-sm">
-            Live
+                        Live          {" "}
           </div>
+                 {" "}
         </div>
       )}
+         {" "}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
+import CustomParticipantViewUI from "../CustomParticipantViewUI";
 
 interface DesktopNormalLayoutProps {
   sorted: StreamVideoParticipant[];
@@ -56,6 +57,7 @@ const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }: DesktopNorm
             participant={p}
             trackType="videoTrack"
             className="!h-full !w-full object-cover"
+            ParticipantViewUI={CustomParticipantViewUI}
           />
         </div>
       ))}
