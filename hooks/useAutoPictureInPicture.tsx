@@ -40,10 +40,9 @@ export const useAutoPictureInPicture = () => {
 
     const currentTargetParticipant = useMemo(() => getTargetParticipant(), [getTargetParticipant]);
 
-    // Document PiP toggle
+    // Document PiP toggle (desktop)
     const toggleDocumentPiP = useCallback(async () => {
         if (!("documentPictureInPicture" in window)) {
-            console.warn("Document PiP not supported");
             return;
         }
 
@@ -79,12 +78,65 @@ export const useAutoPictureInPicture = () => {
         }
     }, [pipWindow]);
 
-    // Unified toggle - Document PiP only (removes video PiP fallback)
-    const togglePiP = useCallback(async () => {
-        await toggleDocumentPiP();
-    }, [toggleDocumentPiP]);
+    // Video PiP toggle (mobile fallback)
+    const toggleVideoPiP = useCallback(async () => {
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+                setIsPiPActive(false);
+            } else {
+                // Find video element for current target
+                if (!currentTargetParticipant) return;
+                
+                const videoElements = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+                let targetVideo: HTMLVideoElement | null = null;
+                
+                // Try to find the first active video
+                for (const video of videoElements) {
+                    if (video.srcObject && video.readyState >= 2) {
+                        targetVideo = video;
+                        break;
+                    }
+                }
 
-    const isPiPSupported = "documentPictureInPicture" in window;
+                if (targetVideo && 'requestPictureInPicture' in targetVideo) {
+                    await targetVideo.requestPictureInPicture();
+                    setIsPiPActive(true);
+                }
+            }
+        } catch (error) {
+            console.error("Video PiP failed:", error);
+        }
+    }, [currentTargetParticipant]);
+
+    // Unified toggle - prefer Document PiP, fallback to Video PiP
+    const togglePiP = useCallback(async () => {
+        if ("documentPictureInPicture" in window) {
+            await toggleDocumentPiP();
+        } else {
+            await toggleVideoPiP();
+        }
+    }, [toggleDocumentPiP, toggleVideoPiP]);
+
+    // Track Video PiP state changes
+    useEffect(() => {
+        const handleEnterPiP = () => setIsPiPActive(true);
+        const handleLeavePiP = () => setIsPiPActive(false);
+
+        document.addEventListener("enterpictureinpicture", handleEnterPiP);
+        document.addEventListener("leavepictureinpicture", handleLeavePiP);
+
+        return () => {
+            document.removeEventListener("enterpictureinpicture", handleEnterPiP);
+            document.removeEventListener("leavepictureinpicture", handleLeavePiP);
+        };
+    }, []);
+
+    // Check if either PiP method is supported
+    const isPiPSupported = 
+        ("documentPictureInPicture" in window) || 
+        (typeof document !== 'undefined' && document.pictureInPictureEnabled === true);
+    
     const isDocumentPiP = !!pipWindow && isPiPActive;
 
     return { 
