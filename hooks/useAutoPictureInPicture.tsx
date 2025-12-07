@@ -4,7 +4,6 @@ import {
     useCallStateHooks,
     hasScreenShare
 } from "@stream-io/video-react-sdk";
-import { useVideoElements } from "@/contexts/VideoElementContext";
 
 export const useAutoPictureInPicture = () => {
     const { 
@@ -16,7 +15,6 @@ export const useAutoPictureInPicture = () => {
     const participants = useParticipants();
     const dominantSpeaker = useDominantSpeaker();
     const hasOngoingScreenShare = useHasOngoingScreenShare();
-    const { getVideo } = useVideoElements();
 
     const [isPiPActive, setIsPiPActive] = useState(false);
     const [pipWindow, setPipWindow] = useState<Window | null>(null);
@@ -36,8 +34,8 @@ export const useAutoPictureInPicture = () => {
         if (dominantSpeaker) {
             return dominantSpeaker;
         }
-        // Priority 3: First remote participant
-        return participants.find(p => !p.isLocalParticipant) || null;
+        // Priority 3: First participant (sorted by Stream)
+        return participants[0] || null;
     }, [dominantSpeaker, hasOngoingScreenShare, screenSharer, participants]);
 
     const currentTargetParticipant = useMemo(() => getTargetParticipant(), [getTargetParticipant]);
@@ -52,6 +50,7 @@ export const useAutoPictureInPicture = () => {
         if (pipWindow) {
             pipWindow.close();
             setPipWindow(null);
+            setIsPiPActive(false);
         } else {
             try {
                 const pw = await (window as any).documentPictureInPicture.requestWindow({
@@ -80,43 +79,13 @@ export const useAutoPictureInPicture = () => {
         }
     }, [pipWindow]);
 
-    // Video PiP toggle (fallback)
-    const toggleVideoPiP = useCallback(async () => {
-        if (document.pictureInPictureElement) {
-            await document.exitPictureInPicture().catch(console.error);
-        } else {
-            const targetVideo = currentTargetParticipant ? getVideo(currentTargetParticipant.sessionId) : null;
-            if (targetVideo && document.pictureInPictureEnabled) {
-                await targetVideo.requestPictureInPicture().catch(console.error);
-            }
-        }
-    }, [currentTargetParticipant, getVideo]);
-
-    // Unified toggle - prefer Document PiP
+    // Unified toggle - Document PiP only (removes video PiP fallback)
     const togglePiP = useCallback(async () => {
-        if ("documentPictureInPicture" in window) {
-            await toggleDocumentPiP();
-        } else {
-            await toggleVideoPiP();
-        }
-    }, [toggleDocumentPiP, toggleVideoPiP]);
+        await toggleDocumentPiP();
+    }, [toggleDocumentPiP]);
 
-    // Track Video PiP state
-    useEffect(() => {
-        const handlePiPEvent = () => {
-            setIsPiPActive(!!document.pictureInPictureElement);
-        };
-
-        document.addEventListener("enterpictureinpicture", handlePiPEvent);
-        document.addEventListener("leavepictureinpicture", handlePiPEvent);
-
-        return () => {
-            document.removeEventListener("enterpictureinpicture", handlePiPEvent);
-            document.removeEventListener("leavepictureinpicture", handlePiPEvent);
-        };
-    }, []);
-
-    const isPiPSupported = "documentPictureInPicture" in window || document.pictureInPictureEnabled;
+    const isPiPSupported = "documentPictureInPicture" in window;
+    const isDocumentPiP = !!pipWindow && isPiPActive;
 
     return { 
         togglePiP, 
@@ -124,6 +93,6 @@ export const useAutoPictureInPicture = () => {
         isPiPSupported,
         pipWindow,
         currentTargetParticipant,
-        isDocumentPiP: !!pipWindow
+        isDocumentPiP
     };
 };

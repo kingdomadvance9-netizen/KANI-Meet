@@ -120,6 +120,34 @@ const GridLayout = () => {
                     ? "screenShareTrack"
                     : "videoTrack"
                 }
+                VideoPlaceholder={({ style }) => (
+                  <div
+                    style={{ 
+                      ...style, 
+                      width: "100%", 
+                      height: "100%",
+                      background: "#1f1f1f",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "column"
+                    }}
+                  >
+                    {currentTargetParticipant.image && (
+                      <img
+                        style={{ width: 100, height: 100, borderRadius: "50%" }}
+                        src={currentTargetParticipant.image}
+                        alt={currentTargetParticipant.userId}
+                      />
+                    )}
+                    {!currentTargetParticipant.image && (
+                      <span style={{ color: "white", fontSize: "16px" }}>
+                        {currentTargetParticipant.name ||
+                          currentTargetParticipant.userId}
+                      </span>
+                    )}
+                  </div>
+                )}
               />
             </div>
             <div className="p-2 bg-gray-800 text-white text-sm text-center">
