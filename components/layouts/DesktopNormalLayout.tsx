@@ -1,4 +1,7 @@
-import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
+import {
+  ParticipantView,
+  StreamVideoParticipant,
+} from "@stream-io/video-react-sdk";
 // import CustomParticipantViewUI from "../CustomParticipantViewUI";
 
 interface DesktopNormalLayoutProps {
@@ -7,7 +10,11 @@ interface DesktopNormalLayoutProps {
   activeSpeaker: StreamVideoParticipant | null;
 }
 
-const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }: DesktopNormalLayoutProps) => {
+const DesktopNormalLayout = ({
+  sorted,
+  screenWidth,
+  activeSpeaker,
+}: DesktopNormalLayoutProps) => {
   const count = sorted.length;
 
   // Highlight active speaker
@@ -28,9 +35,7 @@ const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }: DesktopNorm
   }
 
   // Column count
-  const cols =
-    screenWidth < 1536 ? 4 :
-    screenWidth < 1800 ? 5 : 6;
+  const cols = screenWidth < 1536 ? 4 : screenWidth < 1800 ? 5 : 6;
 
   return (
     <div
@@ -39,6 +44,7 @@ const DesktopNormalLayout = ({ sorted, screenWidth, activeSpeaker }: DesktopNorm
     >
       {sorted.map((p) => (
         <div
+          data-session-id={p.sessionId}
           key={p.sessionId}
           className={`
             rounded-xl 

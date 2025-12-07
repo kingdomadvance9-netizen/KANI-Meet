@@ -1,4 +1,7 @@
-import { ParticipantView, StreamVideoParticipant } from "@stream-io/video-react-sdk";
+import {
+  ParticipantView,
+  StreamVideoParticipant,
+} from "@stream-io/video-react-sdk";
 // import CustomParticipantViewUI from "../CustomParticipantViewUI";
 
 interface DesktopScreenShareLayoutProps {
@@ -7,7 +10,11 @@ interface DesktopScreenShareLayoutProps {
   activeSpeaker: StreamVideoParticipant | null;
 }
 
-const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }: DesktopScreenShareLayoutProps) => {
+const DesktopScreenShareLayout = ({
+  participants,
+  screenSharer,
+  activeSpeaker,
+}: DesktopScreenShareLayoutProps) => {
   const getGlowClass = (p: StreamVideoParticipant) =>
     p.sessionId === activeSpeaker?.sessionId
       ? "ring-4 ring-blue-400 shadow-blue-300 shadow-xl scale-[1.03] transition-all duration-300"
@@ -15,10 +22,12 @@ const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }:
 
   return (
     <div className="w-full h-full flex gap-4 overflow-hidden">
-
       {/* Shared Screen - 3/4 width */}
       <div className="flex-[3] h-full">
-        <div className="w-full h-full bg-black/40 rounded-xl overflow-hidden shadow-xl">
+        <div
+          data-session-id={screenSharer.sessionId}
+          className="w-full h-full bg-black/40 rounded-xl overflow-hidden shadow-xl"
+        >
           <ParticipantView
             participant={screenSharer}
             trackType="screenShareTrack"
@@ -34,6 +43,7 @@ const DesktopScreenShareLayout = ({ participants, screenSharer, activeSpeaker }:
           .filter((p) => p.sessionId !== screenSharer.sessionId)
           .map((p) => (
             <div
+              data-session-id={p.sessionId}
               key={p.sessionId}
               className={`
                 w-full bg-black/40 rounded-xl overflow-hidden shadow-md 

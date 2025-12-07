@@ -18,8 +18,8 @@ const GridLayout = () => {
   const dominantSpeaker = useDominantSpeaker();
   const isScreenSharing = useHasOngoingScreenShare();
 
-  // Auto PiP hook
-  const { manualTogglePiP } = useAutoPictureInPicture();
+  // Auto PiP hook - CORRECTED
+  const { togglePiP, isPiPActive, isPiPSupported } = useAutoPictureInPicture();
 
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1024
@@ -65,16 +65,22 @@ const GridLayout = () => {
   return (
     <div className="w-full h-full p-2 overflow-y-auto overscroll-contain">
       {/* Floating PiP Button */}
-      <button
-        onClick={manualTogglePiP}
-        disabled={!document.pictureInPictureEnabled}
-        className="fixed top-4 right-4 z-50 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full shadow-lg transition-all"
-        style={{
-          display: document.pictureInPictureEnabled ? "block" : "none",
-        }}
-      >
-        📺 PiP
-      </button>
+      {isPiPSupported && (
+        <button
+          onClick={togglePiP}
+          className={`
+            fixed top-4 right-4 z-50 
+            ${
+              isPiPActive
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-blue-600 hover:bg-blue-700"
+            }
+            text-white px-4 py-2 rounded-full shadow-lg transition-all
+          `}
+        >
+          {isPiPActive ? "❌ Exit PiP" : "📺 PiP"}
+        </button>
+      )}
       {/** MOBILE */}
       {isMobile && !isScreenMode && (
         <MobileNormalLayout
