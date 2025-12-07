@@ -1,6 +1,10 @@
 "use client";
 
-import { useCallStateHooks, hasScreenShare, ParticipantView } from "@stream-io/video-react-sdk";
+import {
+  useCallStateHooks,
+  hasScreenShare,
+  ParticipantView,
+} from "@stream-io/video-react-sdk";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAutoPictureInPicture } from "../hooks/useAutoPictureInPicture";
@@ -19,13 +23,13 @@ const GridLayout = () => {
   const dominantSpeaker = useDominantSpeaker();
   const isScreenSharing = useHasOngoingScreenShare();
 
-  const { 
-    togglePiP, 
-    isPiPActive, 
-    isPiPSupported, 
+  const {
+    togglePiP,
+    isPiPActive,
+    isPiPSupported,
     pipWindow,
     currentTargetParticipant,
-    isDocumentPiP 
+    isDocumentPiP,
   } = useAutoPictureInPicture();
 
   const [screenWidth, setScreenWidth] = useState(
@@ -72,33 +76,56 @@ const GridLayout = () => {
         <button
           onClick={togglePiP}
           className={`
-            fixed top-4 right-4 z-50 
-            ${isPiPActive ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}
-            text-white px-4 py-2 rounded-full shadow-lg transition-all font-semibold
-          `}
+      fixed top-4 right-4 z-50
+      w-10 h-10 flex items-center justify-center
+      rounded-full shadow-xl transition-all
+      backdrop-blur-md
+      ${
+        isPiPActive
+          ? "bg-red-600/90 hover:bg-red-700"
+          : "bg-blue-600/90 hover:bg-blue-700"
+      }
+    `}
+          title={
+            isPiPActive ? "Exit Picture-in-Picture" : "Enter Picture-in-Picture"
+          }
         >
-          {isPiPActive ? "🔴 Exit PiP" : "📺 Minimize"}
+          {isPiPActive ? (
+            // Exit PiP Icon (⬆️ out of box style)
+            <span className="text-white text-lg">⤴️</span>
+          ) : (
+            // Enter PiP Icon (little screen in screen)
+            <span className="text-white text-lg">🗔</span>
+          )}
         </button>
       )}
 
       {/* Document PiP Portal */}
-      {pipWindow && currentTargetParticipant && createPortal(
-        <div className="w-full h-full bg-gray-900 flex flex-col">
-          <div className="flex-1 relative">
-            <ParticipantView
-              participant={currentTargetParticipant}
-              trackType={isScreenSharing && screenSharer?.sessionId === currentTargetParticipant.sessionId 
-                ? "screenShareTrack" 
-                : "videoTrack"}
-            />
-          </div>
-          <div className="p-2 bg-gray-800 text-white text-sm text-center">
-            {currentTargetParticipant.name || "Participant"}
-            {isScreenSharing && screenSharer?.sessionId === currentTargetParticipant.sessionId && " (Screen)"}
-          </div>
-        </div>,
-        pipWindow.document.body
-      )}
+      {pipWindow &&
+        currentTargetParticipant &&
+        createPortal(
+          <div className="w-full h-full bg-gray-900 flex flex-col">
+            <div className="flex-1 relative">
+              <ParticipantView
+                participant={currentTargetParticipant}
+                trackType={
+                  isScreenSharing &&
+                  screenSharer?.sessionId === currentTargetParticipant.sessionId
+                    ? "screenShareTrack"
+                    : "videoTrack"
+                }
+              />
+            </div>
+            <div className="p-2 bg-gray-800 text-white text-sm text-center">
+              {currentTargetParticipant.name || "Participant"}
+              {isScreenSharing &&
+                screenSharer?.sessionId ===
+                  currentTargetParticipant.sessionId &&
+                " (Screen)"}
+            </div>
+          </div>,
+          pipWindow.document.body
+        )}
 
       {/* Main Layout - Hidden when Document PiP is active */}
       {!isDocumentPiP && (
