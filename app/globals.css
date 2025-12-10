@@ -102,6 +102,23 @@
   
 }
 
+@keyframes float-reaction {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-250px) scale(1.6);
+    opacity: 0;
+  }
+}
+
+.animate-float-reaction {
+  animation: float-reaction 2s ease-out forwards;
+}
 
 
 /* Dark class variant */
