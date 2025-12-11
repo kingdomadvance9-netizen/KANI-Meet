@@ -3,9 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import MeetingTypeList from "@/components/MeetingTypeList";
 
 const slides = [
-  { title: "Upcoming Meeting at: 12:30 PM", bg: "bg-hero" },
-  { title: "", bg: "bg-hero-courageous" },
-  { title: "", bg: "bg-hero-wisdom" },
+  { 
+    title: "Upcoming Meeting at: 12:30 PM", 
+    desktopBg: "bg-hero", 
+    mobileBg: "bg-hero" 
+  },
+  // Add more slides if needed:
+  // { title: "", desktopBg: "bg-hero-courageous", mobileBg: "bg-hero-mobile-2" },
+  // { title: "", desktopBg: "bg-hero-wisdom", mobileBg: "bg-hero-mobile-3" },
 ];
 
 export default function HomeBanner() {
@@ -25,7 +30,6 @@ export default function HomeBanner() {
   const autoplayRef = useRef<number | null>(null);
   const isPaused = useRef(false);
 
-  // autoplay
   useEffect(() => {
     const auto = () => {
       if (!isPaused.current) {
@@ -34,11 +38,14 @@ export default function HomeBanner() {
     };
     autoplayRef.current = window.setInterval(auto, 5000);
     return () => {
-      if (autoplayRef.current) window.clearInterval(autoplayRef.current);
-    };
+  if (autoplayRef.current !== null) {
+    clearInterval(autoplayRef.current);
+  }
+};
+
   }, []);
 
-  // touch handling
+  // Touch swipe
   const startX = useRef(0);
   const endX = useRef(0);
   const onTouchStart = (e: React.TouchEvent) =>
@@ -47,25 +54,22 @@ export default function HomeBanner() {
     (endX.current = e.touches[0].clientX);
   const onTouchEnd = () => {
     const dist = startX.current - endX.current;
-    if (dist > 40) setIndex((i) => (i + 1) % slides.length); // swipe left
-    if (dist < -40) setIndex((i) => (i - 1 + slides.length) % slides.length); // swipe right
+    if (dist > 40) setIndex((i) => (i + 1) % slides.length);
+    if (dist < -40) setIndex((i) => (i - 1 + slides.length) % slides.length);
   };
 
-  // helpers
   const next = () => setIndex((i) => (i + 1) % slides.length);
   const prev = () => setIndex((i) => (i - 1 + slides.length) % slides.length);
 
   return (
     <section className="flex size-full flex-col text-white gap-5 !mt-0 !pt-0">
-      {/* ===== MOBILE (full-bleed) ===== */}
+      
+      {/* ===== MOBILE (1080x1080 images) ===== */}
       <div
-        // mobile-only wrapper: remove rounded corners and extend to edges
         className="md:hidden relative overflow-hidden w-screen left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onMouseEnter={() => (isPaused.current = true)}
-        onMouseLeave={() => (isPaused.current = false)}
       >
         <div
           className="flex h-[300px] transition-transform duration-500"
@@ -74,39 +78,29 @@ export default function HomeBanner() {
           {slides.map((s, i) => (
             <article
               key={i}
-              className={`min-w-full h-[300px] bg-center bg-cover ${s.bg} flex flex-col justify-between px-5 py-8`}
-              role="group"
-              aria-roledescription="slide"
-              aria-label={`${i + 1} of ${slides.length}`}
+              className={`min-w-full h-[300px] bg-center bg-cover 
+                          ${s.mobileBg}     /* <= MOBILE IMAGE HERE */
+                          md:${s.desktopBg}  /* <= desktop override (ignored on mobile) */
+                          flex flex-col justify-between px-5 py-8`}
             >
-              <h2 className="glassmorphism max-w-[280px] rounded py-2 text-center text-base font-normal">
-                {/*{s.title}*/}
-              </h2>
-              <div>
-                <h1 className="text-3xl font-extrabold">{/*{time}*/}</h1>
-                <p className="text-sm font-medium text-sky-1">{/*{date}*/}</p>
-              </div>
             </article>
           ))}
         </div>
 
-        {/* controls */}
+        {/* Controls */}
         <button
-          aria-label="Previous"
           onClick={prev}
           className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/30 px-3 py-2 rounded-full"
         >
           ‹
         </button>
         <button
-          aria-label="Next"
           onClick={next}
           className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/30 px-3 py-2 rounded-full"
         >
           ›
         </button>
 
-        {/* dots */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
           {slides.map((_, i) => (
             <button
@@ -120,14 +114,9 @@ export default function HomeBanner() {
         </div>
       </div>
 
-      {/* ===== DESKTOP (centered container with rounding) ===== */}
-      <div
-        // desktop wrapper: visible from md and up
-        className="hidden md:block w-full"
-        onMouseEnter={() => (isPaused.current = true)}
-        onMouseLeave={() => (isPaused.current = false)}
-      >
-        <div className=" relative mx-auto max-w-[1200px] rounded-[20px] overflow-hidden h-[320px]">
+      {/* ===== DESKTOP (unchanged) ===== */}
+      <div className="hidden md:block w-full">
+        <div className="relative mx-auto max-w-[1200px] rounded-[20px] overflow-hidden h-[320px]">
           <div
             className="flex h-full transition-transform duration-500"
             style={{ transform: `translateX(-${index * 100}%)` }}
@@ -135,61 +124,26 @@ export default function HomeBanner() {
             {slides.map((s, i) => (
               <article
                 key={i}
-                className={`min-w-full h-full bg-center bg-cover ${s.bg} flex flex-col justify-between p-11`}
-                role="group"
-                aria-roledescription="slide"
-                aria-label={`${i + 1} of ${slides.length}`}
-              >
-                <h2 className=" max-w-[360px] rounded py-2 text-center text-base font-normal">
-                  {/*{s.title}*/}
-                </h2>
-                <div>
-                  <h1 className="text-4xl lg:text-6xl font-extrabold">
-                    {/*{time}*/}
-                  </h1>
-                  <p className="text-lg font-medium text-sky-1 lg:text-2xl">
-                    {/*{date}*/}
-                  </p>
-                </div>
-              </article>
+                className={`min-w-full h-full bg-center bg-cover ${s.desktopBg} flex flex-col justify-between p-11`}
+              ></article>
             ))}
           </div>
 
-          {/* controls */}
           <button
-            aria-label="Previous"
             onClick={prev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 
-             bg-white/30 px-3 py-2 rounded-full hidden lg:flex"
+            className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/30 px-3 py-2 rounded-full hidden lg:flex"
           >
             ‹
           </button>
-
           <button
-            aria-label="Next"
             onClick={next}
-            className="absolute right-4 top-1/2 -translate-y-1/2 
-             bg-white/30 px-3 py-2 rounded-full hidden lg:flex"
+            className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/30 px-3 py-2 rounded-full hidden lg:flex"
           >
             ›
           </button>
-
-          {/* dots (desktop) */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 hidden lg:flex gap-2">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setIndex(i)}
-                className={`h-2 w-2 rounded-full ${
-                  index === i ? "bg-white" : "bg-white/40"
-                }`}
-              />
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* meeting cards/controls */}
       <MeetingTypeList />
     </section>
   );

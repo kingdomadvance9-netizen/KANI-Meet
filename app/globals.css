@@ -329,6 +329,14 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* RESPONSIVENES */
+@media (max-width: 768px) {
+  .screen-share-btn {
+    display: none !important;
+  }
+}
+
+
 /* =====================================================
    BASE
    ===================================================== */

@@ -5,6 +5,7 @@ import {
   CallParticipantsList,
   CallingState,
   useCall,
+  CallStatsButton,
   useCallStateHooks,
   StreamVideoEvent,
 } from "@stream-io/video-react-sdk";
@@ -187,6 +188,7 @@ useEffect(() => {
       <div className="fixed bottom-0 left-0 w-full flex justify-center pb-[env(safe-area-inset-bottom)] z-40">
         <div className="flex items-center justify-center gap-3 bg-black/40 px-5 py-3 rounded-xl border border-white/20 backdrop-blur-xl flex-wrap sm:flex-nowrap mb-3">
           <CustomCallControls />
+          <CallStatsButton />
 
           <ReactionButton
             onReact={({ emoji }) => {

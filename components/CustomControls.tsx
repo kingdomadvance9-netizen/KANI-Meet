@@ -30,7 +30,9 @@ const CustomCallControls = () => {
 
       <CancelCallButton onLeave={() => router.push("/")} />
 
-      <ScreenShareButton />
+      <div className="screen-share-btn">
+        <ScreenShareButton />
+      </div>
 
       {/* ✅ Show ONLY if user is admin */}
       {isAdmin && <RecordCallButton />}
