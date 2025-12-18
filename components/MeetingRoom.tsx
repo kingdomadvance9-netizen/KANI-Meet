@@ -11,9 +11,9 @@ import {
 } from "@stream-io/video-react-sdk";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Users } from "lucide-react";
+
 import Loader from "./Loader";
 import EndCallButton from "./EndCallButton";
-import { cn } from "@/lib/utils";
 import GridLayout from "./GridLayout";
 import CustomHostControls from "./CustomHostControls";
 import ReactionButton from "./ReactionButton";
@@ -21,7 +21,8 @@ import CustomCallControls from "./CustomControls";
 import FloatingReactions from "./FloatingReactions";
 import ChatSidebar from "./ChatSidebar";
 import ChatButton from "./ChatButton";
-import { ensureCallChatChannel, addMemberToChatChannel } from "@/actions/stream.actions";
+
+import { cn } from "@/lib/utils";
 
 const MeetingRoom = () => {
   const searchParams = useSearchParams();
@@ -31,7 +32,7 @@ const MeetingRoom = () => {
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
 
   // --------------------------
-  // 1️⃣ ALL HOOKS MUST ALWAYS RUN HERE
+  // 1️⃣ ALL HOOKS MUST RUN
   // --------------------------
 
   const callingState = useCallCallingState();
@@ -43,42 +44,6 @@ const MeetingRoom = () => {
   const [, forceUpdate] = useState({});
 
   const isPersonalRoom = !!searchParams.get("personal");
-
-useEffect(() => {
-  if (!call || callingState !== CallingState.JOINED) return;
-
-  const setupChatChannel = async () => {
-    try {
-      // Get all participant IDs from the call
-      const participantIds = call.state.participants.map(p => p.userId).filter(Boolean) as string[];
-      
-      await ensureCallChatChannel(call.id, participantIds);
-    } catch (error) {
-      console.error("Failed to create chat channel:", error);
-    }
-  };
-
-  setupChatChannel();
-}, [call, callingState]);
-
-
-useEffect(() => {
-  if (!call) return;
-
-  const handleParticipantJoined = async (event: StreamVideoEvent) => {
-    if (event.type !== "call.session_participant_joined") return;
-    if (!event.participant?.user?.id) return;
-    
-    try {
-      await addMemberToChatChannel(call.id, event.participant.user.id);
-    } catch (error) {
-      console.error("Failed to add member to chat:", error);
-    }
-  };
-
-  call.on("call.session_participant_joined", handleParticipantJoined);
-  return () => call.off("call.session_participant_joined", handleParticipantJoined);
-}, [call]);
 
   // 🔄 Refresh UI when user's role changes
   useEffect(() => {
@@ -110,7 +75,7 @@ useEffect(() => {
 
       const { emoji, sessionId } = event.custom;
 
-      // ⛔ Ignore events *we* sent (we already animated locally)
+      // ⛔ Ignore reactions we sent ourselves
       const localId = call.state.localParticipant?.sessionId;
       if (sessionId === localId) return;
 
@@ -126,7 +91,7 @@ useEffect(() => {
   }, [call]);
 
   // --------------------------
-  // 2️⃣ NOW WE ARE ALLOWED TO RETURN CONDITIONALLY
+  // 2️⃣ CONDITIONAL RETURN SAFE
   // --------------------------
 
   if (callingState !== CallingState.JOINED) {
@@ -134,7 +99,7 @@ useEffect(() => {
   }
 
   // --------------------------
-  // 3️⃣ RENDER SAFE
+  // 3️⃣ RENDER
   // --------------------------
 
   return (
@@ -143,10 +108,11 @@ useEffect(() => {
 
       <div
         className={cn(
-          "h-full w-full flex overflow-hidden overflow-x-hidden relative",
+          "h-full w-full flex overflow-hidden relative",
           (showParticipants || showChat) && "mr-[300px]"
         )}
       >
+        {/* VIDEO GRID */}
         <div className="flex-1 h-full relative">
           <div className="absolute inset-0 overflow-auto scroll-smooth pb-32">
             <GridLayout />
@@ -154,26 +120,15 @@ useEffect(() => {
         </div>
 
         {/* CHAT SIDEBAR */}
-        <aside
-          className={cn(
-            `fixed top-0 h-full w-[300px]
-     bg-[#0d1117] border-l border-gray-700 shadow-xl
-     transition-transform duration-300 z-50 overflow-y-auto`,
-            showChat ? "translate-x-0 right-0" : "translate-x-full right-0"
-          )}
-        >
-          <ChatSidebar open={showChat} onClose={() => setShowChat(false)} />
-        </aside>
+        <ChatSidebar open={showChat} onClose={() => setShowChat(false)} />
 
         {/* PARTICIPANTS SIDEBAR */}
         <aside
           className={cn(
             `fixed top-0 h-full w-[300px]
-     bg-[#0d1117] border-l border-gray-700 shadow-xl
-     transition-transform duration-300 z-50 overflow-y-auto`,
-            showParticipants
-              ? "translate-x-0 right-0"
-              : "translate-x-full right-0"
+             bg-[#0d1117] border-l border-gray-700 shadow-xl
+             transition-transform duration-300 z-50 overflow-y-auto right-0`,
+            showParticipants ? "translate-x-0" : "translate-x-full"
           )}
         >
           {isHostOrCoHost ? (
@@ -192,16 +147,15 @@ useEffect(() => {
 
           <ReactionButton
             onReact={({ emoji }) => {
-              const sessionId = call?.state?.localParticipant?.sessionId;
+              const sessionId =
+                call?.state?.localParticipant?.sessionId;
 
-              // SEND to everyone globally
               call?.sendCustomEvent({
                 type: "reaction",
                 emoji,
                 sessionId,
               });
 
-              // Also show locally instantly
               window.dispatchEvent(
                 new CustomEvent("spawn-reaction", {
                   detail: { emoji, sessionId },
@@ -216,8 +170,7 @@ useEffect(() => {
             </div>
           </button>
 
-          <ChatButton onClick={() => setShowChat((prev) => !prev)} />
-
+          <ChatButton onClick={() => setShowChat((p) => !p)} />
 
           {!isPersonalRoom && <EndCallButton />}
         </div>
