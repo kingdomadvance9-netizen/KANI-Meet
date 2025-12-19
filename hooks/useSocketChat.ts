@@ -21,6 +21,7 @@ export type SocketChatMessage = {
   id: string;
   text: string;
   createdAt: number;
+  pinned: boolean;
   sender: {
     id: string;
     name: string;
@@ -72,6 +73,13 @@ export const useSocketChat = (roomId?: string) => {
       setSelfSocketId(socket.id!);
       socket.emit("join-room", roomId);
     };
+
+    // --- NEW: Handle History Event ---
+  const handleChatHistory = (history: ReceivedMessage[]) => {
+    setMessages(history);
+  };
+
+  
 
     const handleReceiveMessage = (data: ReceivedMessage) => {
       setMessages((prev) => {
@@ -134,15 +142,82 @@ export const useSocketChat = (roomId?: string) => {
       );
     };
 
+
+    // --- UPDATED: Handle Reaction Event ---
+    const handleReactionUpdate = (data: { 
+      messageId: string; 
+      userId: string; 
+      emoji: string; 
+      action: "added" | "removed" | "updated" 
+    }) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.message.id !== data.messageId) return m;
+          const reactions = { ...(m.message.reactions || {}) };
+
+          // Clear user from all emojis
+          Object.keys(reactions).forEach((key) => {
+            reactions[key] = reactions[key].filter((id) => id !== data.userId);
+            if (reactions[key].length === 0) delete reactions[key];
+          });
+
+          // Add back if action isn't 'removed'
+          if (data.action !== "removed") {
+            if (!reactions[data.emoji]) reactions[data.emoji] = [];
+            reactions[data.emoji] = [...reactions[data.emoji], data.userId];
+          }
+
+          return { ...m, message: { ...m.message, reactions } };
+        })
+      );
+    };
+
+    // --- UPDATED: Handle Pin Update ---
+   const handlePinUpdate = ({ messageId, pinned }: { messageId: string, pinned: boolean }) => {
+      setMessages((prev) => {
+        const newMessages = prev.map(m => 
+          m.message.id === messageId ? { ...m, message: { ...m.message, pinned } } : m
+        );
+
+        // Update the pinnedMessage state for the top bar
+        const updatedMsg = newMessages.find(m => m.message.id === messageId);
+        if (updatedMsg && pinned) {
+          setPinnedMessage(updatedMsg.message);
+        } else if (updatedMsg && !pinned) {
+          // If the currently pinned message was the one unpinned, clear it
+          setPinnedMessage(prevPinned => prevPinned?.id === messageId ? null : prevPinned);
+        }
+
+        return newMessages;
+      });
+    };
+
     socket.on("connect", handleConnect);
+    socket.on("chat-history", (history) => {
+      setMessages(history);
+      // Auto-set the pinned message bar from history if one exists
+      const pinned = history.find((m: any) => m.message.pinned);
+      if (pinned) setPinnedMessage(pinned.message);
+    });
     socket.on("receive-message", handleReceiveMessage);
     socket.on("typing-start", handleTypingStart);
     socket.on("typing-stop", handleTypingStop);
     socket.on("pin-message", handlePinMessage);
     socket.on("message-react", handleMessageReaction);
+    socket.on("message-react-update", handleReactionUpdate);
+    socket.on("pin-message-update", handlePinUpdate);
 
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("chat-history");
+      socket.off("receive-message", handleReceiveMessage);
+      socket.off("typing-start", handleTypingStart);
+      socket.off("typing-stop", handleTypingStop);
+      socket.off("pin-message", handlePinMessage);
       socket.off("message-react", handleMessageReaction);
+      socket.off("message-react-update", handleReactionUpdate);
+      socket.off("pin-message-update", handlePinUpdate);
+      
       socket.emit("leave-room", roomId);
       socket.disconnect();
     };
@@ -163,6 +238,7 @@ export const useSocketChat = (roomId?: string) => {
         id: crypto.randomUUID(),
         text,
         createdAt: Date.now(),
+        pinned: false,
         sender: {
           id: user.id,
           name:
@@ -192,12 +268,24 @@ export const useSocketChat = (roomId?: string) => {
   // PIN MESSAGE
   // ----------------------------
   const pinMessage = useCallback(
-    (message: SocketChatMessage) => {
-      setPinnedMessage(message);
-      socket.emit("pin-message", { roomId, message });
-    },
-    [roomId, socket]
-  );
+  (messageOrId: SocketChatMessage | string, isPinned?: boolean) => {
+    let messageId: string;
+    let pinnedStatus: boolean;
+
+    if (typeof messageOrId === "string") {
+      messageId = messageOrId;
+      pinnedStatus = isPinned ?? true;
+    } else {
+      messageId = messageOrId.id;
+      // Toggle logic: if it's currently pinned, we unpin it
+      pinnedStatus = !messageOrId.pinned; 
+    }
+
+    console.log("Pushing pin update:", { messageId, pinned: pinnedStatus });
+    socket.emit("pin-message", { roomId, messageId, pinned: pinnedStatus });
+  },
+  [roomId, socket]
+);
 
   // ----------------------------
   // REACT TO MESSAGE ✅

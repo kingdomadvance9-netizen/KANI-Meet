@@ -201,7 +201,7 @@ const ChatSidebar = ({ open, onClose }: ChatSidebarProps) => {
         )}
 
         {messages.map((m, i) => {
-          const isSelf = m.socketId === selfSocketId;
+          const isSelf = m.message.sender.id === selfUserId;
 
           const grouped =
             i > 0 &&
