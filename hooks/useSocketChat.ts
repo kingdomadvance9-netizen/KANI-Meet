@@ -63,165 +63,168 @@ export const useSocketChat = (roomId?: string) => {
   // ----------------------------
   // CONNECT + LISTENERS
   // ----------------------------
-  useEffect(() => {
-    if (!roomId || !user) return;
+ useEffect(() => {
+  if (!roomId || !user) return;
 
-    socket.connect();
-
-    const handleConnect = () => {
-      setConnected(true);
-      setSelfSocketId(socket.id!);
-      socket.emit("join-room", roomId);
-    };
-
-    // --- NEW: Handle History Event ---
-  const handleChatHistory = (history: ReceivedMessage[]) => {
-    setMessages(history);
+  // ----------------------------
+  // CONNECT + JOIN ROOM (SAFE)
+  // ----------------------------
+  const joinRoom = () => {
+    console.log("🟢 joining room:", roomId);
+    setConnected(true);
+    setSelfSocketId(socket.id!);
+    socket.emit("join-room", roomId);
   };
 
-  
+  // Only connect if not already connected
+  if (!socket.connected) {
+    socket.connect();
+  }
 
-    const handleReceiveMessage = (data: ReceivedMessage) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.message.id === data.message.id)) return prev;
-        return [...prev, data];
-      });
-    };
+  // Handle both fast & slow connections
+  if (socket.connected) {
+    joinRoom();
+  } else {
+    socket.once("connect", joinRoom);
+  }
 
-    const handleTypingStart = (data: TypingUser) => {
-      if (data.socketId === socket.id) return;
-      setTypingUsers((prev) =>
-        prev.some((u) => u.socketId === data.socketId) ? prev : [...prev, data]
-      );
-    };
+  // ----------------------------
+  // HANDLERS
+  // ----------------------------
+  const handleChatHistory = (history: ReceivedMessage[]) => {
+    setMessages(history);
 
-    const handleTypingStop = ({ socketId }: { socketId: string }) => {
-      setTypingUsers((prev) => prev.filter((u) => u.socketId !== socketId));
-    };
+    const pinned = history.find((m) => m.message.pinned);
+    if (pinned) setPinnedMessage(pinned.message);
+  };
 
-    const handlePinMessage = (message: SocketChatMessage) => {
-      setPinnedMessage(message);
-    };
+  const handleReceiveMessage = (data: ReceivedMessage) => {
+    setMessages((prev) => {
+      if (prev.some((m) => m.message.id === data.message.id)) return prev;
+      return [...prev, data];
+    });
+  };
 
-    const handleMessageReaction = ({
-      messageId,
-      emoji,
-      userId,
-    }: {
-      messageId: string;
-      emoji: string;
-      userId: string;
-    }) => {
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.message.id !== messageId) return m;
+  const handleTypingStart = (data: TypingUser) => {
+    if (data.socketId === socket.id) return;
+    setTypingUsers((prev) =>
+      prev.some((u) => u.socketId === data.socketId) ? prev : [...prev, data]
+    );
+  };
 
-          const reactions = { ...(m.message.reactions || {}) };
+  const handleTypingStop = ({ socketId }: { socketId: string }) => {
+    setTypingUsers((prev) => prev.filter((u) => u.socketId !== socketId));
+  };
 
-          // 🔥 Remove user from all other reactions (one reaction per user)
-          for (const e of Object.keys(reactions)) {
-            reactions[e] = reactions[e].filter((id) => id !== userId);
-            if (reactions[e].length === 0) delete reactions[e];
-          }
+  const handlePinMessage = (message: SocketChatMessage) => {
+    setPinnedMessage(message);
+  };
 
-          const users = reactions[emoji] || [];
-          const hasReacted = m.message.reactions?.[emoji]?.includes(user?.id);
+  const handleMessageReaction = ({
+    messageId,
+    emoji,
+    userId,
+  }: {
+    messageId: string;
+    emoji: string;
+    userId: string;
+  }) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.message.id !== messageId) return m;
 
-          if (!hasReacted) {
-            reactions[emoji] = [...users, userId];
-          }
+        const reactions = { ...(m.message.reactions || {}) };
 
-          return {
-            ...m,
-            message: {
-              ...m.message,
-              reactions,
-            },
-          };
-        })
-      );
-    };
+        Object.keys(reactions).forEach((e) => {
+          reactions[e] = reactions[e].filter((id) => id !== userId);
+          if (reactions[e].length === 0) delete reactions[e];
+        });
 
+        reactions[emoji] = [...(reactions[emoji] || []), userId];
 
-    // --- UPDATED: Handle Reaction Event ---
-    const handleReactionUpdate = (data: { 
-      messageId: string; 
-      userId: string; 
-      emoji: string; 
-      action: "added" | "removed" | "updated" 
-    }) => {
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.message.id !== data.messageId) return m;
-          const reactions = { ...(m.message.reactions || {}) };
+        return { ...m, message: { ...m.message, reactions } };
+      })
+    );
+  };
 
-          // Clear user from all emojis
-          Object.keys(reactions).forEach((key) => {
-            reactions[key] = reactions[key].filter((id) => id !== data.userId);
-            if (reactions[key].length === 0) delete reactions[key];
-          });
+  const handleReactionUpdate = (data: {
+    messageId: string;
+    userId: string;
+    emoji: string;
+    action: "added" | "removed" | "updated";
+  }) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.message.id !== data.messageId) return m;
 
-          // Add back if action isn't 'removed'
-          if (data.action !== "removed") {
-            if (!reactions[data.emoji]) reactions[data.emoji] = [];
-            reactions[data.emoji] = [...reactions[data.emoji], data.userId];
-          }
+        const reactions = { ...(m.message.reactions || {}) };
 
-          return { ...m, message: { ...m.message, reactions } };
-        })
-      );
-    };
+        Object.keys(reactions).forEach((key) => {
+          reactions[key] = reactions[key].filter((id) => id !== data.userId);
+          if (reactions[key].length === 0) delete reactions[key];
+        });
 
-    // --- UPDATED: Handle Pin Update ---
-   const handlePinUpdate = ({ messageId, pinned }: { messageId: string, pinned: boolean }) => {
-      setMessages((prev) => {
-        const newMessages = prev.map(m => 
-          m.message.id === messageId ? { ...m, message: { ...m.message, pinned } } : m
-        );
-
-        // Update the pinnedMessage state for the top bar
-        const updatedMsg = newMessages.find(m => m.message.id === messageId);
-        if (updatedMsg && pinned) {
-          setPinnedMessage(updatedMsg.message);
-        } else if (updatedMsg && !pinned) {
-          // If the currently pinned message was the one unpinned, clear it
-          setPinnedMessage(prevPinned => prevPinned?.id === messageId ? null : prevPinned);
+        if (data.action !== "removed") {
+          reactions[data.emoji] = [...(reactions[data.emoji] || []), data.userId];
         }
 
-        return newMessages;
-      });
-    };
+        return { ...m, message: { ...m.message, reactions } };
+      })
+    );
+  };
 
-    socket.on("connect", handleConnect);
-    socket.on("chat-history", (history) => {
-      setMessages(history);
-      // Auto-set the pinned message bar from history if one exists
-      const pinned = history.find((m: any) => m.message.pinned);
-      if (pinned) setPinnedMessage(pinned.message);
+  const handlePinUpdate = ({
+    messageId,
+    pinned,
+  }: {
+    messageId: string;
+    pinned: boolean;
+  }) => {
+    setMessages((prev) => {
+      const updated = prev.map((m) =>
+        m.message.id === messageId
+          ? { ...m, message: { ...m.message, pinned } }
+          : m
+      );
+
+      const pinnedMsg = updated.find((m) => m.message.pinned);
+      setPinnedMessage(pinnedMsg ? pinnedMsg.message : null);
+
+      return updated;
     });
-    socket.on("receive-message", handleReceiveMessage);
-    socket.on("typing-start", handleTypingStart);
-    socket.on("typing-stop", handleTypingStop);
-    socket.on("pin-message", handlePinMessage);
-    socket.on("message-react", handleMessageReaction);
-    socket.on("message-react-update", handleReactionUpdate);
-    socket.on("pin-message-update", handlePinUpdate);
+  };
 
-    return () => {
-      socket.off("connect", handleConnect);
-      socket.off("chat-history");
-      socket.off("receive-message", handleReceiveMessage);
-      socket.off("typing-start", handleTypingStart);
-      socket.off("typing-stop", handleTypingStop);
-      socket.off("pin-message", handlePinMessage);
-      socket.off("message-react", handleMessageReaction);
-      socket.off("message-react-update", handleReactionUpdate);
-      socket.off("pin-message-update", handlePinUpdate);
-      
-      socket.emit("leave-room", roomId);
-      socket.disconnect();
-    };
-  }, [roomId, user, socket]);
+  // ----------------------------
+  // REGISTER LISTENERS
+  // ----------------------------
+  socket.on("chat-history", handleChatHistory);
+  socket.on("receive-message", handleReceiveMessage);
+  socket.on("typing-start", handleTypingStart);
+  socket.on("typing-stop", handleTypingStop);
+  socket.on("pin-message", handlePinMessage);
+  socket.on("message-react", handleMessageReaction);
+  socket.on("message-react-update", handleReactionUpdate);
+  socket.on("pin-message-update", handlePinUpdate);
+
+  // ----------------------------
+  // CLEANUP
+  // ----------------------------
+  return () => {
+    socket.off("connect", joinRoom);
+    socket.off("chat-history", handleChatHistory);
+    socket.off("receive-message", handleReceiveMessage);
+    socket.off("typing-start", handleTypingStart);
+    socket.off("typing-stop", handleTypingStop);
+    socket.off("pin-message", handlePinMessage);
+    socket.off("message-react", handleMessageReaction);
+    socket.off("message-react-update", handleReactionUpdate);
+    socket.off("pin-message-update", handlePinUpdate);
+
+    socket.emit("leave-room", roomId);
+    // ❌ DO NOT socket.disconnect() (singleton!)
+  };
+}, [roomId, user]);
+
 
   // ----------------------------
   // SEND MESSAGE
