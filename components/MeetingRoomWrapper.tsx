@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useCallStateHooks } from "@stream-io/video-react-sdk";
 
+// 🔊 mediasoup (Phase 4 – signaling only)
+import { getSocket } from "@/lib/socket";
+import { useMediasoup } from "@/lib/useMediasoup";
+
 const notifyUser = () => {
   if ("Notification" in window && Notification.permission === "granted") {
     const notification = new Notification("Meeting Active!", {
@@ -32,6 +36,10 @@ const MeetingRoomWrapper = ({
 
   const { useDominantSpeaker } = useCallStateHooks();
   const dominantSpeaker = useDominantSpeaker();
+
+  // 🔊 mediasoup (socket + init)
+  const socket = getSocket();
+  const { initMediasoup } = useMediasoup(socket);
 
   const requestWakeLock = async () => {
     try {
@@ -93,6 +101,7 @@ const MeetingRoomWrapper = ({
     });
   };
 
+  // 🟢 Existing lifecycle (unchanged)
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted") {
       Notification.requestPermission();
@@ -122,6 +131,17 @@ const MeetingRoomWrapper = ({
       }
     };
   }, []);
+
+  // 🔊 mediasoup Phase 4 – room join / leave (SAFE)
+useEffect(() => {
+  if (!call || !socket?.connected) return;
+
+  const roomId = call.id;
+
+  initMediasoup(roomId).catch(console.error);
+
+}, [call?.id, socket?.connected]);
+
 
   const onDragStart = () => setIsDragging(true);
   const onDragEnd = () => setIsDragging(false);
