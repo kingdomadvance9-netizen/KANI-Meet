@@ -24,13 +24,15 @@ const initialValues = {
 const MeetingTypeList = () => {
   const router = useRouter();
   const { user } = useUser();
-  
+
   const [meetingState, setMeetingState] = useState<
     "isScheduleMeeting" | "isJoiningMeeting" | "isInstantMeeting" | undefined
   >(undefined);
 
   const [values, setValues] = useState(initialValues);
-  const [generatedMeetingId, setGeneratedMeetingId] = useState<string | null>(null);
+  const [generatedMeetingId, setGeneratedMeetingId] = useState<string | null>(
+    null
+  );
 
   const createMeeting = async () => {
     if (!user) return;
@@ -43,18 +45,18 @@ const MeetingTypeList = () => {
 
       // 1. Generate a unique ID locally
       const id = crypto.randomUUID();
-      
+
       // 2. PHASE 6: Save meeting metadata to YOUR database
-      // Example: await fetch('/api/meetings', { 
-      //   method: 'POST', 
-      //   body: JSON.stringify({ id, userId: user.id, description: values.description, startsAt: values.dateTime }) 
+      // Example: await fetch('/api/meetings', {
+      //   method: 'POST',
+      //   body: JSON.stringify({ id, userId: user.id, description: values.description, startsAt: values.dateTime })
       // });
 
       setGeneratedMeetingId(id);
 
       // 3. If it's an instant meeting, go straight to the room
       if (!values.description && meetingState === "isInstantMeeting") {
-        router.push(`/meeting/${id}`);
+        router.push(`/meeting/${id}?creator=true`);
       }
 
       toast.success("Meeting Created Successfully");
@@ -112,14 +114,20 @@ const MeetingTypeList = () => {
           handleClick={createMeeting}
         >
           <div className="flex flex-col gap-2.5">
-            <label className="text-base font-normal leading-[22.4px] text-sky-2">Add a description</label>
+            <label className="text-base font-normal leading-[22.4px] text-sky-2">
+              Add a description
+            </label>
             <Textarea
               className="border-none bg-dark-3 focus-visible:ring-0 focus-visible:ring-offset-0"
-              onChange={(e) => setValues({ ...values, description: e.target.value })}
+              onChange={(e) =>
+                setValues({ ...values, description: e.target.value })
+              }
             />
           </div>
           <div className="flex w-full flex-col gap-2.5">
-            <label className="text-base font-normal leading-[22.4px] text-sky-2">Select Date and Time</label>
+            <label className="text-base font-normal leading-[22.4px] text-sky-2">
+              Select Date and Time
+            </label>
             <ReactDatePicker
               selected={values.dateTime}
               onChange={(date) => setValues({ ...values, dateTime: date! })}
@@ -159,9 +167,9 @@ const MeetingTypeList = () => {
         className="text-center"
         buttonText="Join Meeting"
         handleClick={() => {
-            // Clean the link if the user pastes the whole URL
-            const id = values.link.split('/').pop();
-            router.push(`/meeting/${id}`);
+          // Clean the link if the user pastes the whole URL
+          const id = values.link.split("/").pop();
+          router.push(`/meeting/${id}`);
         }}
       >
         <Input

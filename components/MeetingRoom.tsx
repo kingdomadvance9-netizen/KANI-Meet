@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Users, Settings } from "lucide-react";
 
@@ -16,8 +16,12 @@ import { useMediasoupContext } from "@/contexts/MediasoupContext";
 const MeetingRoom = () => {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const roomId = (params?.id as string) || "default-room";
   const { user } = useUser();
+
+  // Check if user is the creator from URL params
+  const isCreator = searchParams.get("creator") === "true";
 
   // ✅ Get real-time data from Mediasoup Context
   const {
@@ -37,10 +41,17 @@ const MeetingRoom = () => {
     if (socket && !isInitialized && user) {
       const userName = user.fullName || user.firstName || "Anonymous";
       const userImageUrl = user.imageUrl;
-      console.log("🚀 Joining Mediasoup Room:", roomId, "as", userName);
-      joinRoom(roomId, userName, userImageUrl);
+      console.log(
+        "🚀 Joining Mediasoup Room:",
+        roomId,
+        "as",
+        userName,
+        "isCreator:",
+        isCreator
+      );
+      joinRoom(roomId, userName, userImageUrl, isCreator);
     }
-  }, [socket, isInitialized, roomId, joinRoom, user]);
+  }, [socket, isInitialized, roomId, joinRoom, user, isCreator]);
 
   return (
     <section className="relative h-screen w-full bg-[#0F1115] text-white overflow-hidden">

@@ -35,9 +35,9 @@ const PersonalRoom = () => {
     if (!user || !meetingId) return;
 
     // ✅ SIMPLE NAVIGATION
-    // We don't need to call client.call() anymore. 
+    // We don't need to call client.call() anymore.
     // The Mediasoup server creates the room dynamically when the first person joins.
-    router.push(`/meeting/${meetingId}?personal=true`);
+    router.push(`/meeting/${meetingId}?personal=true&creator=true`);
   };
 
   const meetingLink = `${process.env.NEXT_PUBLIC_BASE_URL}/meeting/${meetingId}?personal=true`;
@@ -46,7 +46,10 @@ const PersonalRoom = () => {
     <section className="flex size-full flex-col gap-10 text-white">
       <h1 className="text-xl font-bold lg:text-3xl">Personal Meeting Room</h1>
       <div className="flex w-full flex-col gap-8 xl:max-w-[900px]">
-        <Table title="Topic" description={`${user?.username || user?.firstName}'s Meeting Room`} />
+        <Table
+          title="Topic"
+          description={`${user?.username || user?.firstName}'s Meeting Room`}
+        />
         <Table title="Meeting ID" description={meetingId || ""} />
         <Table title="Invite Link" description={meetingLink} />
       </div>
