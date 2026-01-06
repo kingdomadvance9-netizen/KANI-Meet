@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useCall } from "@stream-io/video-react-sdk";
 import {
   useSocketChat,
   SocketChatMessage,
@@ -20,6 +19,12 @@ import {
   Laugh,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+
+interface ChatSidebarProps {
+  open: boolean;
+  onClose: () => void;
+  roomId: string; // ✅ ADDED: Pass roomId as a prop
+}
 
 const Avatar = ({ name, avatarUrl }: { name: string; avatarUrl?: string }) => {
   const [error, setError] = useState(false);
@@ -61,9 +66,7 @@ const formatTime = (timestamp: number) =>
     minute: "2-digit",
   });
 
-const ChatSidebar = ({ open, onClose }: ChatSidebarProps) => {
-  const call = useCall();
-  const roomId = call?.id;
+const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
   const { user } = useUser();
   const selfUserId = user?.id;
 

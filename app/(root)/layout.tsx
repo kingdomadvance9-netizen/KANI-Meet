@@ -1,9 +1,8 @@
-// app/root/layout.tsx
 import type { Metadata } from "next";
-import StreamVideoProvider from "@/providers/StreamClientProvider";
 import React, { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
-
+import { MediasoupProvider } from "@/providers/MediasoupProvider";
+import "../globals.css"; 
 
 export const metadata: Metadata = {
   title: "Grace Meet",
@@ -15,12 +14,16 @@ export const metadata: Metadata = {
 
 const RootLayout = ({ children }: { children: ReactNode }) => {
   return (
-    <main>
-      <StreamVideoProvider>
-        {children}
-        <Toaster />
-      </StreamVideoProvider>
-    </main>
+    <html lang="en">
+      <body className="bg-dark-2">
+        <MediasoupProvider>
+          <main>
+            {children}
+            <Toaster />
+          </main>
+        </MediasoupProvider>
+      </body>
+    </html>
   );
 };
 

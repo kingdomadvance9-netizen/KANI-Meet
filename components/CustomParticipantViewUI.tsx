@@ -1,67 +1,60 @@
-// components/CustomParticipantViewUI.tsx
-import { useEffect, useState } from "react";
-import { useParticipantViewContext } from "@stream-io/video-react-sdk";
+"use client";
 
-const CustomParticipantViewUI = () => {
-  const { videoElement } = useParticipantViewContext();
-  const [pictureInPictureElement, setPictureInPictureElement] = useState(
-    document.pictureInPictureElement,
-  );
+import { useEffect, useState, RefObject } from "react";
+
+interface CustomParticipantViewUIProps {
+  // ✅ Instead of context, we pass the ref to the specific video element
+  videoRef: RefObject<HTMLVideoElement | null>;
+}
+
+const CustomParticipantViewUI = ({ videoRef }: CustomParticipantViewUIProps) => {
+  const [isPipActive, setIsPipActive] = useState(false);
 
   useEffect(() => {
+    const videoElement = videoRef.current;
     if (!videoElement) return;
 
-    const handlePictureInPicture = () => {
-      setPictureInPictureElement(document.pictureInPictureElement);
-    };
+    const handleEnterPiP = () => setIsPipActive(true);
+    const handleLeavePiP = () => setIsPipActive(false);
 
-    videoElement.addEventListener(
-      "enterpictureinpicture",
-      handlePictureInPicture,
-    );
-    videoElement.addEventListener(
-      "leavepictureinpicture",
-      handlePictureInPicture,
-    );
+    videoElement.addEventListener("enterpictureinpicture", handleEnterPiP);
+    videoElement.addEventListener("leavepictureinpicture", handleLeavePiP);
 
     return () => {
-      videoElement.removeEventListener(
-        "enterpictureinpicture",
-        handlePictureInPicture,
-      );
-      videoElement.removeEventListener(
-        "leavepictureinpicture",
-        handlePictureInPicture,
-      );
+      videoElement.removeEventListener("enterpictureinpicture", handleEnterPiP);
+      videoElement.removeEventListener("leavepictureinpicture", handleLeavePiP);
     };
-  }, [videoElement]);
+  }, [videoRef]);
 
-  const togglePictureInPicture = () => {
-    if (videoElement && pictureInPictureElement !== videoElement)
-      return videoElement.requestPictureInPicture().catch(console.error);
+  const togglePictureInPicture = async () => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
 
-    document.exitPictureInPicture().catch(console.error);
+    try {
+      if (document.pictureInPictureElement !== videoElement) {
+        await videoElement.requestPictureInPicture();
+      } else {
+        await document.exitPictureInPicture();
+      }
+    } catch (error) {
+      console.error("PiP Error:", error);
+    }
   };
+
+  // Only show the button if the browser supports PiP
+  if (typeof document !== "undefined" && !document.pictureInPictureEnabled) {
+    return null;
+  }
 
   return (
     <button
-      disabled={!document.pictureInPictureEnabled}
-      style={{ 
-        position: "absolute", 
-        top: 10, 
-        right: 10,
-        zIndex: 50,
-        background: "rgba(0,0,0,0.6)",
-        color: "white",
-        padding: "8px 12px",
-        borderRadius: "8px",
-        fontSize: "12px",
-        border: "none",
-        cursor: "pointer"
+      className="absolute top-2 right-2 z-50 bg-black/60 hover:bg-black/80 text-white px-3 py-1.5 rounded-lg text-xs transition-colors backdrop-blur-sm border border-white/10"
+      onClick={(e) => {
+        e.stopPropagation(); // Prevent clicking the video tile itself
+        togglePictureInPicture();
       }}
-      onClick={togglePictureInPicture}
     >
-      {pictureInPictureElement === videoElement ? "Exit PiP" : "PiP"}
+      {isPipActive ? "Exit PiP" : "PiP"}
     </button>
   );
 };

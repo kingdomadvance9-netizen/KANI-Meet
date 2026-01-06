@@ -1,12 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCallStateHooks } from "@stream-io/video-react-sdk";
-
-// 🔊 mediasoup (Phase 4 – signaling only)
-import { getSocket } from "@/lib/socket";
-import { useMediasoup } from "@/lib/useMediasoup";
-import { useMediasoupContext } from "@/contexts/MediasoupContext";
 
 const notifyUser = () => {
   if ("Notification" in window && Notification.permission === "granted") {
@@ -21,12 +15,12 @@ const notifyUser = () => {
   }
 };
 
-const MeetingRoomWrapper = ({ 
+const MeetingRoomWrapper = ({
   children,
-  call
-}: { 
+  roomId,
+}: {
   children: React.ReactNode;
-  call: any;
+  roomId: string;
 }) => {
   const wakeLockRef = useRef<any>(null);
   const miniRef = useRef<HTMLDivElement>(null);
@@ -34,14 +28,6 @@ const MeetingRoomWrapper = ({
   const [showOverlay, setShowOverlay] = useState(false);
   const [drag, setDrag] = useState({ x: 20, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
-
-  const { useDominantSpeaker } = useCallStateHooks();
-  const dominantSpeaker = useDominantSpeaker();
-
-  // 🔊 mediasoup (socket + init)
-  const socket = getSocket();
-  const { initMediasoup, muteAudio, unmuteAudio, isAudioMuted, enableVideo, disableVideo, toggleVideo, isVideoEnabled } = useMediasoup(socket);
-  const mediasoupContext = useMediasoupContext();
 
   const requestWakeLock = async () => {
     try {
@@ -63,7 +49,7 @@ const MeetingRoomWrapper = ({
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: "Active Meeting",
-        artist: "Custom Meet",
+        artist: "Grace Meet",
       });
       navigator.mediaSession.playbackState = "playing";
 
@@ -103,7 +89,6 @@ const MeetingRoomWrapper = ({
     });
   };
 
-  // 🟢 Existing lifecycle (unchanged)
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted") {
       Notification.requestPermission();
@@ -115,12 +100,8 @@ const MeetingRoomWrapper = ({
     const handleVis = () => {
       const isHidden = document.hidden;
       setShowOverlay(isHidden);
-
-      if (isHidden) {
-        notifyUser();
-      } else {
-        requestWakeLock();
-      }
+      if (isHidden) notifyUser();
+      else requestWakeLock();
     };
 
     document.addEventListener("visibilitychange", handleVis);
@@ -134,47 +115,6 @@ const MeetingRoomWrapper = ({
     };
   }, []);
 
-  // 🔊 mediasoup Phase 1 & 3 – room join / leave with socket connection
-useEffect(() => {
-  if (!call) return;
-
-  const roomId = call.id;
-
-  // Connect socket if not already connected
-  if (!socket.connected) {
-    socket.connect();
-  }
-
-  // Wait for socket to be connected before initializing mediasoup
-  const handleSocketConnect = () => {
-    initMediasoup(roomId)
-      .then(() => {
-        // Register controls after mediasoup is initialized
-        mediasoupContext.registerMediasoupControls({
-          muteAudio,
-          unmuteAudio,
-          isAudioMuted,
-          enableVideo,
-          disableVideo,
-          toggleVideo,
-          isVideoEnabled,
-        });
-      })
-      .catch(console.error);
-  };
-
-  if (socket.connected) {
-    handleSocketConnect();
-  } else {
-    socket.once("connect", handleSocketConnect);
-  }
-
-  return () => {
-    socket.off("connect", handleSocketConnect);
-  };
-}, [call?.id]);
-
-
   const onDragStart = () => setIsDragging(true);
   const onDragEnd = () => setIsDragging(false);
 
@@ -182,7 +122,6 @@ useEffect(() => {
     if (!isDragging) return;
     const miniSize = 65;
     const halfSize = miniSize / 2;
-
     setDrag({
       x: Math.max(10, e.clientX - halfSize),
       y: Math.max(10, e.clientY - halfSize),
@@ -204,7 +143,6 @@ useEffect(() => {
           className={`
             fixed z-[99999] cursor-pointer rounded-full 
             shadow-lg overflow-hidden transition-all duration-300
-            ${dominantSpeaker ? "ring-4 ring-blue-400" : ""}
           `}
           style={{
             width: 65,
@@ -213,8 +151,8 @@ useEffect(() => {
             top: drag.y,
           }}
         >
-          <div className="w-full h-full bg-black/60 flex items-center justify-center text-white text-sm">
-            Live
+          <div className="w-full h-full bg-black/60 flex items-center justify-center text-white text-xs font-bold">
+            LIVE
           </div>
         </div>
       )}

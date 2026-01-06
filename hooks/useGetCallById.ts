@@ -1,31 +1,47 @@
-import { useEffect, useState } from 'react';
-import { Call, useStreamVideoClient } from '@stream-io/video-react-sdk';
+"use client";
+
+import { useEffect, useState } from "react";
+
+// ✅ Define a simple interface for your meeting metadata
+export interface MeetingRoom {
+  id: string;
+  description?: string;
+  startsAt?: string;
+  createdBy?: string;
+}
 
 export const useGetCallById = (id: string | string[]) => {
-  const [call, setCall] = useState<Call>();
+  const [call, setCall] = useState<MeetingRoom | null>(null);
   const [isCallLoading, setIsCallLoading] = useState(true);
 
-  const client = useStreamVideoClient();
-
   useEffect(() => {
-    if (!client) return;
-    
+    // Ensure we have a string ID
+    const roomId = Array.isArray(id) ? id[0] : id;
+    if (!roomId) return;
+
     const loadCall = async () => {
       try {
-        // https://getstream.io/video/docs/react/guides/querying-calls/#filters
-        const { calls } = await client.queryCalls({ filter_conditions: { id } });
+        // ✅ PHASE 6: Replace with your actual API endpoint
+        // const response = await fetch(`/api/meetings/${roomId}`);
+        // const data = await response.json();
+        
+        // Mocking a successful fetch for now so your UI doesn't break
+        const mockCall: MeetingRoom = {
+          id: roomId,
+          description: "Mediasoup Meeting",
+          startsAt: new Date().toISOString(),
+        };
 
-        if (calls.length > 0) setCall(calls[0]);
-
+        setCall(mockCall);
         setIsCallLoading(false);
       } catch (error) {
-        console.error(error);
+        console.error("Failed to fetch room metadata:", error);
         setIsCallLoading(false);
       }
     };
 
     loadCall();
-  }, [client, id]);
+  }, [id]);
 
   return { call, isCallLoading };
 };

@@ -1,126 +1,71 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  CallParticipantsList,
-  CallingState,
-  useCall,
-  CallStatsButton,
-  useCallStateHooks,
-  StreamVideoEvent,
-} from "@stream-io/video-react-sdk";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
+import { Users, Settings } from "lucide-react";
 
-import Loader from "./Loader";
-import EndCallButton from "./EndCallButton";
-import GridLayout from "./GridLayout";
-import CustomHostControls from "./CustomHostControls";
-import ReactionButton from "./ReactionButton";
-import CustomCallControls from "./CustomControls";
-import FloatingReactions from "./FloatingReactions";
 import ChatSidebar from "./ChatSidebar";
 import ChatButton from "./ChatButton";
-
+import GridLayout from "./GridLayout";
+import CustomControls from "./CustomControls";
+import CustomHostControls from "./CustomHostControls";
 import { cn } from "@/lib/utils";
+import { useMediasoupContext } from "@/contexts/MediasoupContext";
 
 const MeetingRoom = () => {
-  const searchParams = useSearchParams();
+  const params = useParams();
   const router = useRouter();
+  const roomId = (params?.id as string) || "default-room";
+  const { user } = useUser();
 
-  const call = useCall();
-  const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
-
-  // --------------------------
-  // 1️⃣ ALL HOOKS MUST RUN
-  // --------------------------
-
-  const callingState = useCallCallingState();
-  const localParticipant = useLocalParticipant();
+  // ✅ Get real-time data from Mediasoup Context
+  const {
+    socket,
+    participants,
+    remoteStreams,
+    localStream,
+    isInitialized,
+    joinRoom,
+  } = useMediasoupContext();
 
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
 
-  const [, forceUpdate] = useState({});
-
-  const isPersonalRoom = !!searchParams.get("personal");
-
-  // 🔄 Refresh UI when user's role changes
+  // ✅ Join the Mediasoup room on mount with user info
   useEffect(() => {
-    if (!call) return;
-
-    const handleMemberUpdate = (event: StreamVideoEvent) => {
-      if ("user" in event && event.user?.id === localParticipant?.userId) {
-        forceUpdate({});
-      }
-    };
-
-    call.on("call.member_updated", handleMemberUpdate);
-    return () => call.off("call.member_updated", handleMemberUpdate);
-  }, [call, localParticipant?.userId]);
-
-  const isHostOrCoHost =
-    localParticipant?.roles?.includes("admin") ||
-    localParticipant?.roles?.includes("host") ||
-    localParticipant?.roles?.includes("co_host") ||
-    localParticipant?.roles?.includes("moderator");
-
-  // 📡 RECEIVE reactions
-  useEffect(() => {
-    if (!call) return;
-
-    const handler = (event: any) => {
-      if (event.type !== "custom") return;
-      if (event.custom?.type !== "reaction") return;
-
-      const { emoji, sessionId } = event.custom;
-
-      // ⛔ Ignore reactions we sent ourselves
-      const localId = call.state.localParticipant?.sessionId;
-      if (sessionId === localId) return;
-
-      window.dispatchEvent(
-        new CustomEvent("spawn-reaction", {
-          detail: { emoji, sessionId },
-        })
-      );
-    };
-
-    call.on("custom", handler);
-    return () => call.off("custom", handler);
-  }, [call]);
-
-  // --------------------------
-  // 2️⃣ CONDITIONAL RETURN SAFE
-  // --------------------------
-
-  if (callingState !== CallingState.JOINED) {
-    return <Loader />;
-  }
-
-  // --------------------------
-  // 3️⃣ RENDER
-  // --------------------------
+    if (socket && !isInitialized && user) {
+      const userName = user.fullName || user.firstName || "Anonymous";
+      const userImageUrl = user.imageUrl;
+      console.log("🚀 Joining Mediasoup Room:", roomId, "as", userName);
+      joinRoom(roomId, userName, userImageUrl);
+    }
+  }, [socket, isInitialized, roomId, joinRoom, user]);
 
   return (
     <section className="relative h-screen w-full bg-[#0F1115] text-white overflow-hidden">
-      <FloatingReactions />
-
       <div
         className={cn(
-          "h-full w-full flex overflow-hidden relative",
-          (showParticipants || showChat) && "mr-[300px]"
+          "h-full w-full flex overflow-hidden relative transition-all duration-300",
+          showParticipants || showChat ? "pr-0 lg:pr-[300px]" : "pr-0"
         )}
       >
-        {/* VIDEO GRID */}
+        {/* VIDEO GRID AREA */}
         <div className="flex-1 h-full relative">
-          <div className="absolute inset-0 overflow-auto scroll-smooth pb-32">
-            <GridLayout />
-          </div>
+          {/* ✅ Pass real streams and participants to the grid */}
+          <GridLayout
+            participants={participants}
+            remoteStreams={remoteStreams}
+            localStream={localStream}
+          />
         </div>
 
         {/* CHAT SIDEBAR */}
-        <ChatSidebar open={showChat} onClose={() => setShowChat(false)} />
+        <ChatSidebar
+          open={showChat}
+          onClose={() => setShowChat(false)}
+          roomId={roomId}
+        />
 
         {/* PARTICIPANTS SIDEBAR */}
         <aside
@@ -131,48 +76,96 @@ const MeetingRoom = () => {
             showParticipants ? "translate-x-0" : "translate-x-full"
           )}
         >
-          {isHostOrCoHost ? (
-            <CustomHostControls onClose={() => setShowParticipants(false)} />
-          ) : (
-            <CallParticipantsList onClose={() => setShowParticipants(false)} />
-          )}
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">
+                Participants ({participants.length})
+              </h2>
+              <button
+                onClick={() => setShowParticipants(false)}
+                className="text-gray-400"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ✅ Map through real Mediasoup participants */}
+            <div className="flex flex-col gap-4">
+              {participants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    {p.imageUrl ? (
+                      <img
+                        src={p.imageUrl}
+                        alt={p.name}
+                        className="w-8 h-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-semibold">
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">
+                        {p.name} {p.id === socket?.id ? "(You)" : ""}
+                      </span>
+                      {p.isHost && (
+                        <span className="text-xs text-yellow-400 flex items-center gap-1">
+                          👑 Host
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </aside>
       </div>
 
-      {/* CONTROLS */}
-      <div className="fixed bottom-0 left-0 w-full flex justify-center pb-[env(safe-area-inset-bottom)] z-40">
-        <div className="flex items-center justify-center gap-3 bg-black/40 px-5 py-3 rounded-xl border border-white/20 backdrop-blur-xl flex-wrap sm:flex-nowrap mb-3">
-          <CustomCallControls />
-          <CallStatsButton />
-
-          <ReactionButton
-            onReact={({ emoji }) => {
-              const sessionId =
-                call?.state?.localParticipant?.sessionId;
-
-              call?.sendCustomEvent({
-                type: "reaction",
-                emoji,
-                sessionId,
-              });
-
-              window.dispatchEvent(
-                new CustomEvent("spawn-reaction", {
-                  detail: { emoji, sessionId },
-                })
-              );
-            }}
-          />
-
-          <button onClick={() => setShowParticipants((p) => !p)}>
-            <div className="cursor-pointer rounded-xl bg-[#1c2732] px-4 py-2 border border-white/10 hover:bg-[#2c3641] transition">
+      {/* CONTROLS BAR */}
+      <div className="fixed bottom-0 left-0 w-full flex justify-center pb-6 z-40">
+        <div className="flex items-center justify-center gap-3 bg-black/60 px-5 py-3 rounded-2xl border border-white/10 backdrop-blur-2xl shadow-2xl">
+          <button
+            onClick={() => setShowParticipants((p) => !p)}
+            className="relative"
+          >
+            <div
+              className={cn(
+                "cursor-pointer rounded-xl px-4 py-2 border transition",
+                showParticipants
+                  ? "bg-blue-600 border-blue-400"
+                  : "bg-[#1c2732] border-white/10 hover:bg-[#2c3641]"
+              )}
+            >
               <Users size={20} />
+              {participants.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-blue-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                  {participants.length}
+                </span>
+              )}
             </div>
           </button>
 
           <ChatButton onClick={() => setShowChat((p) => !p)} />
 
-          {!isPersonalRoom && <EndCallButton />}
+          <div className="w-px h-6 bg-white/10 mx-2" />
+
+          {/* Media Controls */}
+          <CustomControls />
+
+          <button
+            className="cursor-pointer rounded-xl bg-red-600 px-6 py-2 border border-red-400 hover:bg-red-700 transition font-medium"
+            onClick={() => {
+              socket?.disconnect();
+              router.push("/");
+            }}
+          >
+            Leave
+          </button>
         </div>
       </div>
     </section>

@@ -1,55 +1,42 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useUser } from '@clerk/nextjs';
-import { StreamCall, StreamTheme } from '@stream-io/video-react-sdk';
-import { useParams } from 'next/navigation';
-import { Loader } from 'lucide-react';
+import { useState } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useParams } from "next/navigation";
+import { Loader } from "lucide-react";
 
-import { useGetCallById } from '@/hooks/useGetCallById';
-import Alert from '@/components/Alert';
-import MeetingSetup from '@/components/MeetingSetup';
-import MeetingRoom from '@/components/MeetingRoom';
-import { VideoElementProvider } from '@/contexts/VideoElementContext';
-import MeetingRoomWrapper from '@/components/MeetingRoomWrapper';
-import { MediasoupProvider } from '@/contexts/MediasoupContext';
+import MeetingSetup from "@/components/MeetingSetup";
+import MeetingRoom from "@/components/MeetingRoom";
+import MeetingRoomWrapper from "@/components/MeetingRoomWrapper";
+import { useMediasoupContext } from "@/contexts/MediasoupContext";
 
 const MeetingPage = () => {
   const { id: rawId } = useParams();
-  const id = typeof rawId === "string" ? rawId : "";  
+  const roomId = typeof rawId === "string" ? rawId : "";
   const { isLoaded, user } = useUser();
-  const { call, isCallLoading } = useGetCallById(id);
+
+  // ✅ Get socket status from context
+  const { socket } = useMediasoupContext();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
 
-  if (!isLoaded || isCallLoading) return <Loader />;
-
-  if (!call) return (
-    <p className="text-center text-3xl font-bold text-white">
-      Call Not Found
-    </p>
-  );
-
-  const notAllowed = call.type === 'invited' && (!user || !call.state.members.find((m) => m.user.id === user.id));
-
-  if (notAllowed) return <Alert title="You are not allowed to join this meeting" />;
+  // Only wait for Clerk to load and socket to connect
+  if (!isLoaded || !socket)
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-full bg-dark-2 gap-4">
+        <Loader className="animate-spin text-white w-10 h-10" />
+        <p className="text-white/70 text-sm">Connecting to server...</p>
+      </div>
+    );
 
   return (
-    <main className="h-screen w-full">
-      <StreamCall call={call}>
-        <VideoElementProvider>
-          <StreamTheme>
-            <MediasoupProvider>
-              <MeetingRoomWrapper call={call}>
-                {!isSetupComplete ? (
-                  <MeetingSetup setIsSetupComplete={setIsSetupComplete} />
-                ) : (
-                  <MeetingRoom />
-                )}
-              </MeetingRoomWrapper>
-            </MediasoupProvider>
-          </StreamTheme>
-        </VideoElementProvider>
-      </StreamCall>
+    <main className="h-screen w-full bg-dark-2">
+      <MeetingRoomWrapper roomId={roomId}>
+        {!isSetupComplete ? (
+          <MeetingSetup setIsSetupComplete={setIsSetupComplete} />
+        ) : (
+          <MeetingRoom />
+        )}
+      </MeetingRoomWrapper>
     </main>
   );
 };

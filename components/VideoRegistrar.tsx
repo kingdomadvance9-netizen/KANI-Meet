@@ -1,23 +1,44 @@
-// components/VideoRegistrar.tsx
-import { useEffect } from "react";
-import { useParticipantViewContext } from "@stream-io/video-react-sdk";
-import { useVideoElements } from "../contexts/VideoElementContext";
+"use client";
 
-const VideoRegistrar = () => {
-  const { videoElement, participant } = useParticipantViewContext();
-  const { registerVideo, unregisterVideo } = useVideoElements();
+import { useEffect, useRef } from "react";
+
+interface MediasoupVideoProps {
+  track: MediaStreamTrack;
+  isLocal?: boolean;
+  className?: string;
+}
+
+const MediasoupVideo = ({ track, isLocal = false, className }: MediasoupVideoProps) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (!videoElement || !participant.sessionId) return;
+    const videoElement = videoRef.current;
+    if (!videoElement || !track) return;
 
-    registerVideo(participant.sessionId, videoElement);
+    // ✅ Create a new MediaStream from the Mediasoup track
+    const stream = new MediaStream([track]);
+    videoElement.srcObject = stream;
+
+    // Handle play-out
+    videoElement.onloadedmetadata = () => {
+      videoElement.play().catch((err) => console.error("Video play error:", err));
+    };
 
     return () => {
-      unregisterVideo(participant.sessionId);
+      // Clean up resources when track changes or component unmounts
+      videoElement.srcObject = null;
     };
-  }, [videoElement, participant.sessionId, registerVideo, unregisterVideo]);
+  }, [track]);
 
-  return null; // This component only registers, doesn't render anything
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={isLocal} // Always mute local video to prevent feedback
+      className={className}
+    />
+  );
 };
 
-export default VideoRegistrar;
+export default MediasoupVideo;
