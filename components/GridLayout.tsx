@@ -59,7 +59,7 @@ const GridLayout = ({
         {/* 2. REMOTE PARTICIPANTS */}
         {participants
           // ✅ Filter out the local user so you don't see yourself twice
-          .filter((p) => p.id !== socket?.id)
+          .filter((p) => p.id !== user?.id)
           .map((participant) => {
             const stream = remoteStreams.get(participant.id);
 

@@ -37,7 +37,7 @@ const PersonalRoom = () => {
     // ✅ SIMPLE NAVIGATION
     // We don't need to call client.call() anymore.
     // The Mediasoup server creates the room dynamically when the first person joins.
-    router.push(`/meeting/${meetingId}?personal=true&creator=true`);
+    router.push(`/meeting/${meetingId}?personal=true`);
   };
 
   const meetingLink = `${process.env.NEXT_PUBLIC_BASE_URL}/meeting/${meetingId}?personal=true`;

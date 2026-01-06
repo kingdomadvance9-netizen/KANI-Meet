@@ -56,7 +56,7 @@ const MeetingTypeList = () => {
 
       // 3. If it's an instant meeting, go straight to the room
       if (!values.description && meetingState === "isInstantMeeting") {
-        router.push(`/meeting/${id}?creator=true`);
+        router.push(`/meeting/${id}`);
       }
 
       toast.success("Meeting Created Successfully");

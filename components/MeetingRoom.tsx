@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Users, Settings } from "lucide-react";
 
@@ -10,18 +10,15 @@ import ChatButton from "./ChatButton";
 import GridLayout from "./GridLayout";
 import CustomControls from "./CustomControls";
 import CustomHostControls from "./CustomHostControls";
+import ParticipantSidebar from "./ParticipantSidebar";
 import { cn } from "@/lib/utils";
 import { useMediasoupContext } from "@/contexts/MediasoupContext";
 
 const MeetingRoom = () => {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const roomId = (params?.id as string) || "default-room";
   const { user } = useUser();
-
-  // Check if user is the creator from URL params
-  const isCreator = searchParams.get("creator") === "true";
 
   // ✅ Get real-time data from Mediasoup Context
   const {
@@ -41,17 +38,11 @@ const MeetingRoom = () => {
     if (socket && !isInitialized && user) {
       const userName = user.fullName || user.firstName || "Anonymous";
       const userImageUrl = user.imageUrl;
-      console.log(
-        "🚀 Joining Mediasoup Room:",
-        roomId,
-        "as",
-        userName,
-        "isCreator:",
-        isCreator
-      );
-      joinRoom(roomId, userName, userImageUrl, isCreator);
+      console.log("🚀 Joining Mediasoup Room:", roomId, "as", userName);
+      joinRoom(roomId, user.id, userName, userImageUrl, false);
     }
-  }, [socket, isInitialized, roomId, joinRoom, user, isCreator]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, isInitialized, user?.id, roomId]);
 
   return (
     <section className="relative h-screen w-full bg-[#0F1115] text-white overflow-hidden">
@@ -79,62 +70,13 @@ const MeetingRoom = () => {
         />
 
         {/* PARTICIPANTS SIDEBAR */}
-        <aside
-          className={cn(
-            `fixed top-0 h-full w-[300px]
-             bg-[#0d1117] border-l border-gray-700 shadow-xl
-             transition-transform duration-300 z-50 overflow-y-auto right-0`,
-            showParticipants ? "translate-x-0" : "translate-x-full"
-          )}
-        >
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">
-                Participants ({participants.length})
-              </h2>
-              <button
-                onClick={() => setShowParticipants(false)}
-                className="text-gray-400"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* ✅ Map through real Mediasoup participants */}
-            <div className="flex flex-col gap-4">
-              {participants.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center gap-3 justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    {p.imageUrl ? (
-                      <img
-                        src={p.imageUrl}
-                        alt={p.name}
-                        className="w-8 h-8 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-semibold">
-                        {p.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium">
-                        {p.name} {p.id === socket?.id ? "(You)" : ""}
-                      </span>
-                      {p.isHost && (
-                        <span className="text-xs text-yellow-400 flex items-center gap-1">
-                          👑 Host
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
+        <ParticipantSidebar
+          participants={participants}
+          socket={socket}
+          roomId={roomId}
+          open={showParticipants}
+          onClose={() => setShowParticipants(false)}
+        />
       </div>
 
       {/* CONTROLS BAR */}

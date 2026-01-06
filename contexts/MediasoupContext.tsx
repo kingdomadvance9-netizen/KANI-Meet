@@ -37,6 +37,7 @@ type MediasoupContextType = {
   removeHost: (participantId: string) => void;
   joinRoom: (
     roomId: string,
+    userId: string,
     userName?: string,
     userImageUrl?: string,
     isCreator?: boolean
@@ -75,6 +76,7 @@ export const MediasoupProvider = ({
   const videoProducerRef = useRef<types.Producer | null>(null);
   const screenProducerRef = useRef<types.Producer | null>(null);
   const currentRoomIdRef = useRef<string | null>(null);
+  const hasJoinedRef = useRef<boolean>(false);
 
   useEffect(() => {
     const socketInstance = io(
@@ -121,6 +123,81 @@ export const MediasoupProvider = ({
       });
     });
 
+    // ✅ Force control events from host
+    socketInstance.on(
+      "force-mute",
+      ({ audio, by }: { audio: boolean; by: string }) => {
+        if (audio) {
+          // Mute audio
+          if (audioProducerRef.current) {
+            const track = audioProducerRef.current.track;
+            track?.stop();
+            audioProducerRef.current.close();
+            audioProducerRef.current = null;
+            setIsAudioMuted(true);
+
+            setLocalStream((prev) => {
+              if (!prev) return null;
+              const newStream = new MediaStream(prev.getVideoTracks());
+              return newStream.getTracks().length > 0 ? newStream : null;
+            });
+          }
+          console.warn(`🔇 Your microphone was muted by ${by}`);
+        }
+      }
+    );
+
+    socketInstance.on(
+      "force-video-pause",
+      ({ video, by }: { video: boolean; by: string }) => {
+        if (video) {
+          // Pause video
+          if (videoProducerRef.current) {
+            const track = videoProducerRef.current.track;
+            track?.stop();
+            videoProducerRef.current.close();
+            videoProducerRef.current = null;
+            setIsVideoEnabled(false);
+
+            setLocalStream((prev) => {
+              if (!prev) return null;
+              const newStream = new MediaStream(prev.getAudioTracks());
+              return newStream.getTracks().length > 0 ? newStream : null;
+            });
+          }
+          console.warn(`📹 Your camera was turned off by ${by}`);
+        }
+      }
+    );
+
+    socketInstance.on(
+      "kicked-from-room",
+      ({ by, reason }: { by: string; reason: string }) => {
+        console.error(`❌ Removed from room by ${by}: ${reason}`);
+
+        // Clean up all media
+        if (audioProducerRef.current) {
+          audioProducerRef.current.track?.stop();
+          audioProducerRef.current.close();
+        }
+        if (videoProducerRef.current) {
+          videoProducerRef.current.track?.stop();
+          videoProducerRef.current.close();
+        }
+        if (screenProducerRef.current) {
+          screenProducerRef.current.track?.stop();
+          screenProducerRef.current.close();
+        }
+
+        // Redirect after a delay
+        setTimeout(() => {
+          if (typeof window !== "undefined") {
+            window.location.href = "/";
+          }
+        }, 2000);
+      }
+    );
+
     return () => {
       socketInstance.disconnect();
     };
@@ -129,14 +206,30 @@ export const MediasoupProvider = ({
   // Join Room and Initialize Mediasoup
   const joinRoom = async (
     roomId: string,
+    userId: string,
     userName?: string,
     userImageUrl?: string,
     isCreator: boolean = false
   ) => {
-    if (!socket || isInitialized) return;
+    if (!socket || isInitialized) {
+      console.log("⚠️ Cannot join: socket or already initialized");
+      return;
+    }
 
+    // Prevent duplicate joins
+    if (hasJoinedRef.current) {
+      console.log("⚠️ Already joined room - ignoring duplicate call");
+      return;
+    }
+
+    hasJoinedRef.current = true;
     currentRoomIdRef.current = roomId;
     setIsHost(isCreator);
+
+    // Map socket to Clerk user ID for persistent identification
+    socket.emit("set-user-id", userId);
+    console.log("✅ Socket mapped to user:", userId);
+
     console.log(
       "🚪 Joining room:",
       roomId,
@@ -166,6 +259,7 @@ export const MediasoupProvider = ({
       // Step 3: Join Mediasoup Room
       console.log("📤 Sending join request with:", {
         roomId,
+        userId,
         userName,
         userImageUrl: userImageUrl ? "provided" : "missing",
         isCreator,
@@ -177,6 +271,7 @@ export const MediasoupProvider = ({
             {
               roomId,
               rtpCapabilities: newDevice.rtpCapabilities,
+              userId,
               userName,
               userImageUrl,
               isCreator,
