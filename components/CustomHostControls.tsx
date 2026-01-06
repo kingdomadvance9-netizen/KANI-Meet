@@ -32,7 +32,13 @@ interface CustomHostControlsProps {
 
 const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
   const [search, setSearch] = useState("");
-  const { participants, isHost: isLocalHost, makeHost, removeHost, socket } = useMediasoupContext();
+  const {
+    participants,
+    isHost: isLocalHost,
+    makeHost,
+    removeHost,
+    socket,
+  } = useMediasoupContext();
 
   // ✅ Only show if user is host
   if (!isLocalHost) return null;
@@ -60,17 +66,23 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
   };
 
   // ✅ ACTION: Toggle Single Participant
-  const togglePermission = async (userId: string, type: MediaPermission, currentState: boolean) => {
+  const togglePermission = async (
+    userId: string,
+    type: MediaPermission,
+    currentState: boolean
+  ) => {
     try {
       // PHASE 6: socket.emit('request-mute-user', { userId, type })
-      toast.success(`${currentState ? "Disabled" : "Enabled"} ${type} for participant`);
+      toast.success(
+        `${currentState ? "Disabled" : "Enabled"} ${type} for participant`
+      );
     } catch (error) {
       toast.error(`Failed to update ${userId}`);
     }
   };
 
   const filtered = participants.filter((p) =>
-    (p.name || p.sessionId).toLowerCase().includes(search.toLowerCase())
+    (p.name || p.id).toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -79,7 +91,10 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
         <h4 className="text-sm font-semibold text-gray-300">
           Participants [{participants.length}]
         </h4>
-        <button onClick={onClose} className="p-2 rounded hover:bg-[#2A2C36] transition">
+        <button
+          onClick={onClose}
+          className="p-2 rounded hover:bg-[#2A2C36] transition"
+        >
           <X className="w-4 h-4 text-gray-300" />
         </button>
       </div>
@@ -90,10 +105,16 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
             Global Host Controls
           </DropdownMenuTrigger>
           <DropdownMenuContent className="bg-[#1F212A] text-white border border-[#2C2E38] w-[240px]">
-            <DropdownMenuItem onClick={() => updateAll("audio", false)} className="hover:bg-red-500/20 cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => updateAll("audio", false)}
+              className="hover:bg-red-500/20 cursor-pointer"
+            >
               <MicOff className="w-4 h-4 mr-2" /> Disable All Mics
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => updateAll("video", false)} className="hover:bg-red-500/20 cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => updateAll("video", false)}
+              className="hover:bg-red-500/20 cursor-pointer"
+            >
               <VideoOff className="w-4 h-4 mr-2" /> Disable All Cameras
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -112,7 +133,10 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
 
       <div className="space-y-2">
         {filtered.map((p) => (
-          <div key={p.id} className="flex items-center justify-between px-3 py-2 bg-[#1B1D25] rounded-lg">
+          <div
+            key={p.id}
+            className="flex items-center justify-between px-3 py-2 bg-[#1B1D25] rounded-lg"
+          >
             <div className="flex items-center gap-3 min-w-0">
               {p.imageUrl ? (
                 <img
@@ -143,25 +167,28 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#1F212A] text-white border border-[#2C2E38]">
                   {p.isHost ? (
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => handleRemoveHost(p.id, p.name)}
                       className="cursor-pointer hover:bg-orange-500/20"
                     >
                       <Crown className="w-4 h-4 mr-2" /> Remove Host Status
                     </DropdownMenuItem>
                   ) : (
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => handleMakeHost(p.id, p.name)}
                       className="cursor-pointer hover:bg-blue-500/20"
                     >
                       <Crown className="w-4 h-4 mr-2" /> Make Host
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={() => togglePermission(p.id, "audio", true)} className="cursor-pointer hover:bg-red-500/20">
-                     <MicOff className="w-4 h-4 mr-2" /> Mute Participant
+                  <DropdownMenuItem
+                    onClick={() => togglePermission(p.id, "audio", true)}
+                    className="cursor-pointer hover:bg-red-500/20"
+                  >
+                    <MicOff className="w-4 h-4 mr-2" /> Mute Participant
                   </DropdownMenuItem>
                   <DropdownMenuItem className="text-red-400 cursor-pointer hover:bg-red-500/20">
-                     <Shield className="w-4 h-4 mr-2" /> Remove from Call
+                    <Shield className="w-4 h-4 mr-2" /> Remove from Call
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
