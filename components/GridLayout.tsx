@@ -63,6 +63,26 @@ const GridLayout = ({
           .map((participant) => {
             const stream = remoteStreams.get(participant.id);
 
+            // Debug logging
+            if (!stream) {
+              console.log(
+                "⚠️ No stream found for participant:",
+                participant.id,
+                participant.name
+              );
+              console.log(
+                "📋 Available stream keys:",
+                Array.from(remoteStreams.keys())
+              );
+            } else {
+              console.log(
+                "✅ Stream found for participant:",
+                participant.id,
+                "tracks:",
+                stream.getTracks().length
+              );
+            }
+
             return (
               <MediasoupTile
                 key={participant.id}

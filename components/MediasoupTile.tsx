@@ -19,49 +19,106 @@ const MediasoupTile = ({
   isHost,
 }: MediasoupTileProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [hasVideo, setHasVideo] = useState(false);
   const [isTalking, setIsTalking] = useState(false);
 
   useEffect(() => {
-    if (!stream) return;
+    if (!stream) {
+      console.log("⚠️ No stream provided for:", participantName);
+      return;
+    }
 
-    // 1. Check if the stream has a video track
-    const checkTracks = () => {
+    console.log(
+      "🎬 Setting up MediasoupTile for:",
+      participantName,
+      "isLocal:",
+      isLocal
+    );
+    console.log("📊 Stream tracks:", {
+      audio: stream.getAudioTracks().length,
+      video: stream.getVideoTracks().length,
+    });
+
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    const updateStream = () => {
       const videoTrack = stream.getVideoTracks()[0];
+      const audioTrack = stream.getAudioTracks()[0];
       setHasVideo(!!videoTrack && videoTrack.enabled);
+
+      // Re-assign srcObject to ensure the video tag picks up new tracks
+      if (videoElement.srcObject !== stream) {
+        videoElement.srcObject = stream;
+      }
+
+      // Also set audio element for remote participants to ensure audio plays
+      const audioElement = audioRef.current;
+      if (audioElement && !isLocal) {
+        if (audioElement.srcObject !== stream) {
+          audioElement.srcObject = stream;
+          console.log(
+            "🔊 Setting audio stream for remote participant:",
+            participantName
+          );
+          audioElement.play().catch((err) => {
+            console.warn(
+              "⚠️ Audio autoplay blocked for",
+              participantName,
+              ":",
+              err
+            );
+          });
+        }
+      }
     };
 
-    checkTracks();
+    updateStream();
 
-    // Listen for track changes (mute/unmute)
-    stream.onaddtrack = checkTracks;
-    stream.onremovetrack = checkTracks;
+    // ✅ CRITICAL: Listen for tracks added AFTER the stream object exists
+    stream.onaddtrack = () => {
+      console.log("🎵 New track added to stream for:", participantName);
+      updateStream();
+    };
 
-    // 2. Attach stream to element
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
+    stream.onremovetrack = updateStream;
+
+    // Handle Autoplay Policy
+    const playVideo = async () => {
+      try {
+        await videoElement.play();
+      } catch (err) {
+        console.warn("Autoplay blocked. User interaction needed for audio.");
+      }
+    };
+    playVideo();
 
     // 3. Audio Activity Detection
     const audioContext = new (window.AudioContext ||
       (window as any).webkitAudioContext)();
-    const source = audioContext.createMediaStreamSource(stream);
-    const analyzer = audioContext.createAnalyser();
-    source.connect(analyzer);
-    const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+    // Wrap in try-catch because if stream has no audio yet, this might throw
+    try {
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyzer = audioContext.createAnalyser();
+      source.connect(analyzer);
+      const dataArray = new Uint8Array(analyzer.frequencyBinCount);
 
-    const detectAudio = () => {
-      analyzer.getByteFrequencyData(dataArray);
-      const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      setIsTalking(volume > 10);
-      requestAnimationFrame(detectAudio);
-    };
-    detectAudio();
+      const detectAudio = () => {
+        analyzer.getByteFrequencyData(dataArray);
+        const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setIsTalking(volume > 10);
+        requestAnimationFrame(detectAudio);
+      };
+      detectAudio();
+    } catch (e) {
+      console.log("No audio track available for detection yet");
+    }
 
     return () => {
       audioContext.close();
     };
-  }, [stream]);
+  }, [stream, participantName]);
 
   return (
     <div
@@ -71,6 +128,11 @@ const MediasoupTile = ({
           : "border-white/5"
       }`}
     >
+      {/* HIDDEN AUDIO ELEMENT for remote participants */}
+      {!isLocal && (
+        <audio ref={audioRef} autoPlay playsInline className="hidden" />
+      )}
+
       {/* VIDEO ELEMENT (Shows if hasVideo is true) */}
       <video
         ref={videoRef}
