@@ -8,12 +8,18 @@ interface PaymentModalProps {
   userId: string;
   userName?: string;
   isOpen: boolean;
-  onClose: () => void;
-  onSuccess?: () => void;
+  onClose?: () => void;
+  onSuccess?: (transactionId: string) => void;
+  onError?: (error: string) => void;
 }
 
 type AccountType = "ROOM_PAYMENT" | "SUBSCRIPTION" | "CREDITS" | "DONATION";
-type PaymentStatus = "idle" | "loading" | "verifying" | "success" | "error";
+type PaymentStatus =
+  | "idle"
+  | "loading"
+  | "checkingStatus"
+  | "success"
+  | "error";
 
 export default function PaymentModal({
   userId,
@@ -21,15 +27,18 @@ export default function PaymentModal({
   isOpen,
   onClose,
   onSuccess,
+  onError,
 }: PaymentModalProps) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("ROOM_PAYMENT");
   const [status, setStatus] = useState<PaymentStatus>("idle");
-  const [message, setMessage] = useState("");
-  const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(
+    null
+  );
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollingStartTimeRef = useRef<number>(0);
+  const pollingCountRef = useRef<number>(0);
+  const maxPollingAttempts = 12; // 12 attempts × 5 seconds = 60 seconds
 
   // Cleanup polling on unmount or when modal closes
   useEffect(() => {
@@ -38,105 +47,134 @@ export default function PaymentModal({
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      pollingCountRef.current = 0;
     }
   }, [isOpen]);
 
-  const checkPaymentStatus = async (txId: string) => {
+  const checkPaymentStatus = async (requestId: string) => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/mpesa/status/${txId}`
+        `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/status/${requestId}`
       );
       const data = await response.json();
 
-      if (response.ok && data.transaction) {
-        const { status: paymentStatus } = data.transaction;
+      pollingCountRef.current += 1;
 
-        if (paymentStatus === "SUCCESS") {
-          setStatus("success");
-          setMessage("Payment completed successfully!");
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          if (onSuccess) {
-            onSuccess();
-          }
-          setTimeout(() => {
-            handleClose();
-          }, 2000);
-        } else if (
-          paymentStatus === "FAILED" ||
-          paymentStatus === "CANCELLED"
-        ) {
-          setStatus("error");
-          setMessage(
-            `Payment ${paymentStatus.toLowerCase()}. Please try again.`
-          );
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
+      if (data.status === "SUCCESS" && data.data) {
+        // Payment successful
+        setStatus("success");
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
         }
-        // If PENDING, continue polling
+        alert(`Payment successful! Receipt: ${data.data.mpesaReceiptNumber}`);
+        if (onSuccess) {
+          onSuccess(data.data.id);
+        }
+        setTimeout(() => {
+          handleClose();
+        }, 1500);
+      } else if (data.status === "NOT_FOUND") {
+        // Transaction not found - error
+        setStatus("error");
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        const errorMsg = data.message || "Transaction not found";
+        alert(errorMsg);
+        if (onError) {
+          onError(errorMsg);
+        }
+      } else if (data.status === "PENDING") {
+        // Still pending - continue polling
+        if (pollingCountRef.current >= maxPollingAttempts) {
+          // Timeout reached
+          setStatus("idle");
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          alert(
+            "Payment verification timeout. Please check your transaction history."
+          );
+        }
+        // Otherwise continue polling
       }
     } catch (error) {
       console.error("Error checking payment status:", error);
-    }
+      pollingCountRef.current += 1;
 
-    // Check if 60 seconds have passed
-    if (Date.now() - pollingStartTimeRef.current > 60000) {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
+      if (pollingCountRef.current >= maxPollingAttempts) {
+        setStatus("error");
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        const errorMsg = "Failed to verify payment status";
+        alert(errorMsg);
+        if (onError) {
+          onError(errorMsg);
+        }
       }
-      setStatus("error");
-      setMessage(
-        "Payment verification timeout. Please check your M-Pesa messages."
-      );
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("loading");
-    setMessage("Sending payment request...");
 
     try {
-      const response = await fetch("http://localhost:8080/api/mpesa/initiate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          userName: userName || "Anonymous",
-          phoneNumber,
-          amount: parseFloat(amount),
-          accountReference: accountType,
-        }),
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/initiate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            userName: userName || "Anonymous",
+            phoneNumber,
+            amount: parseFloat(amount),
+            accountReference: accountType,
+          }),
+        }
+      );
 
-      const data = await response.json();
+      const result = await response.json();
 
-      if (response.ok && data.transactionId) {
-        setTransactionId(data.transactionId);
-        setStatus("verifying");
-        setMessage(
-          "Check your phone and enter M-Pesa PIN to complete payment..."
-        );
+      if (response.ok && result.success && result.data) {
+        const { checkoutRequestId: reqId } = result.data;
+        setCheckoutRequestId(reqId);
+        setStatus("checkingStatus");
 
-        // Start polling for payment status
-        pollingStartTimeRef.current = Date.now();
-        pollingIntervalRef.current = setInterval(() => {
-          checkPaymentStatus(data.transactionId);
+        // Show alert
+        alert("Check your phone for M-Pesa PIN prompt");
+
+        // Start polling after 5 seconds
+        pollingCountRef.current = 0;
+        setTimeout(() => {
+          pollingIntervalRef.current = setInterval(() => {
+            checkPaymentStatus(reqId);
+          }, 5000);
         }, 5000);
       } else {
         setStatus("error");
-        setMessage(data.error || "Failed to initiate payment");
+        const errorMsg = result.message || "Failed to initiate payment";
+        alert(errorMsg);
+        if (onError) {
+          onError(errorMsg);
+        }
       }
     } catch (error: any) {
       setStatus("error");
-      setMessage(error.message || "An error occurred while initiating payment");
+      const errorMsg =
+        error.message || "An error occurred while initiating payment";
+      alert(errorMsg);
+      if (onError) {
+        onError(errorMsg);
+      }
     }
   };
 
@@ -145,8 +183,8 @@ export default function PaymentModal({
     setAmount("");
     setAccountType("ROOM_PAYMENT");
     setStatus("idle");
-    setMessage("");
-    setTransactionId(null);
+    setCheckoutRequestId(null);
+    pollingCountRef.current = 0;
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
@@ -155,14 +193,16 @@ export default function PaymentModal({
 
   const handleClose = () => {
     resetForm();
-    onClose();
+    if (onClose) {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-md bg-dark-1 rounded-2xl shadow-2xl border border-white/10 overflow-hidden z-[10001]">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-md bg-dark-1 rounded-2xl shadow-2xl border border-white/10 my-auto max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -179,6 +219,7 @@ export default function PaymentModal({
           <button
             onClick={handleClose}
             className="p-2 hover:bg-white/10 rounded-lg transition"
+            disabled={status === "loading" || status === "checkingStatus"}
           >
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -196,9 +237,9 @@ export default function PaymentModal({
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               placeholder="0712345678 or 254712345678"
-              className="w-full px-4 py-3 bg-dark-2 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+              className="w-full px-4 py-3 bg-dark-2 border border-gray-300 rounded-lg text-white placeholder-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition"
               required
-              disabled={status === "loading" || status === "verifying"}
+              disabled={status === "loading" || status === "checkingStatus"}
             />
             <p className="mt-1 text-xs text-gray-500">
               Enter your M-Pesa number
@@ -217,9 +258,9 @@ export default function PaymentModal({
               placeholder="100"
               min="1"
               step="1"
-              className="w-full px-4 py-3 bg-dark-2 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+              className="w-full px-4 py-3 bg-dark-2 border border-gray-300 rounded-lg text-white placeholder-gray-500 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition"
               required
-              disabled={status === "loading" || status === "verifying"}
+              disabled={status === "loading" || status === "checkingStatus"}
             />
           </div>
 
@@ -231,8 +272,8 @@ export default function PaymentModal({
             <select
               value={accountType}
               onChange={(e) => setAccountType(e.target.value as AccountType)}
-              className="w-full px-4 py-3 bg-dark-2 border border-white/10 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
-              disabled={status === "loading" || status === "verifying"}
+              className="w-full px-4 py-3 bg-dark-2 border border-gray-300 rounded-lg text-white focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition"
+              disabled={status === "loading" || status === "checkingStatus"}
             >
               <option value="ROOM_PAYMENT">Room Payment</option>
               <option value="SUBSCRIPTION">Subscription</option>
@@ -241,44 +282,26 @@ export default function PaymentModal({
             </select>
           </div>
 
-          {/* Status Message */}
-          {message && (
-            <div
-              className={cn(
-                "flex items-center gap-2 p-4 rounded-lg text-sm",
-                status === "success" &&
-                  "bg-green-500/20 text-green-400 border border-green-500/30",
-                status === "error" &&
-                  "bg-red-500/20 text-red-400 border border-red-500/30",
-                status === "verifying" &&
-                  "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-              )}
-            >
-              {status === "success" && (
-                <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-              )}
-              {status === "error" && (
-                <XCircle className="w-5 h-5 flex-shrink-0" />
-              )}
-              {status === "verifying" && (
-                <Loader2 className="w-5 h-5 flex-shrink-0 animate-spin" />
-              )}
-              <span>{message}</span>
-            </div>
-          )}
+          {/* Info Message */}
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+            <p className="text-xs text-green-400">
+              You will receive an STK Push prompt. Enter your M-Pesa PIN to
+              complete payment.
+            </p>
+          </div>
 
           {/* Submit Button */}
           <button
             type="submit"
             disabled={
               status === "loading" ||
-              status === "verifying" ||
+              status === "checkingStatus" ||
               status === "success"
             }
             className={cn(
               "w-full py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
               status === "loading" ||
-                status === "verifying" ||
+                status === "checkingStatus" ||
                 status === "success"
                 ? "bg-gray-600 cursor-not-allowed"
                 : "bg-green-600 hover:bg-green-700 active:scale-95"
@@ -289,7 +312,7 @@ export default function PaymentModal({
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Sending Request...
               </>
-            ) : status === "verifying" ? (
+            ) : status === "checkingStatus" ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Verifying Payment...
@@ -303,11 +326,6 @@ export default function PaymentModal({
               "Send Payment Request"
             )}
           </button>
-
-          <p className="text-xs text-center text-gray-500">
-            You will receive an M-Pesa prompt on your phone. Enter your PIN to
-            complete the payment.
-          </p>
         </form>
       </div>
     </div>
