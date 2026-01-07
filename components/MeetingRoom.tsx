@@ -46,10 +46,13 @@ const MeetingRoom = () => {
 
   return (
     <section className="relative h-screen w-full bg-[#0F1115] text-white overflow-hidden">
+      {/* Debug component - remove in production */}
+      
+
       <div
         className={cn(
           "h-full w-full flex overflow-hidden relative transition-all duration-300",
-          showParticipants || showChat ? "pr-0 lg:pr-[300px]" : "pr-0"
+          showParticipants || showChat ? "pr-0 md:pr-[300px]" : "pr-0"
         )}
       >
         {/* VIDEO GRID AREA */}
@@ -80,45 +83,39 @@ const MeetingRoom = () => {
       </div>
 
       {/* CONTROLS BAR */}
-      <div className="fixed bottom-0 left-0 w-full flex justify-center pb-6 z-40">
-        <div className="flex items-center justify-center gap-3 bg-black/60 px-5 py-3 rounded-2xl border border-white/10 backdrop-blur-2xl shadow-2xl">
+      <div className="fixed bottom-0 left-0 w-full flex justify-center pb-3 sm:pb-6 px-2 sm:px-0 z-40">
+        <div className="flex items-center justify-center gap-1 sm:gap-3 bg-black/60 px-2 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl border border-white/10 backdrop-blur-2xl shadow-2xl w-full sm:w-auto max-w-full overflow-x-auto">
+          {/* Participants Button */}
           <button
             onClick={() => setShowParticipants((p) => !p)}
-            className="relative"
+            className="relative flex-shrink-0"
           >
             <div
               className={cn(
-                "cursor-pointer rounded-xl px-4 py-2 border transition",
+                "cursor-pointer rounded-lg sm:rounded-xl px-2 sm:px-4 py-2 border transition touch-manipulation active:scale-95",
                 showParticipants
                   ? "bg-blue-600 border-blue-400"
                   : "bg-[#1c2732] border-white/10 hover:bg-[#2c3641]"
               )}
             >
-              <Users size={20} />
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
               {participants.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-blue-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-blue-500 text-[9px] sm:text-[10px] w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center">
                   {participants.length}
                 </span>
               )}
             </div>
           </button>
 
-          <ChatButton onClick={() => setShowChat((p) => !p)} />
+          {/* Chat Button */}
+          <div className="flex-shrink-0">
+            <ChatButton onClick={() => setShowChat((p) => !p)} />
+          </div>
 
-          <div className="w-px h-6 bg-white/10 mx-2" />
+          <div className="w-px h-4 sm:h-6 bg-white/10 mx-0.5 sm:mx-2 flex-shrink-0" />
 
           {/* Media Controls */}
           <CustomControls />
-
-          <button
-            className="cursor-pointer rounded-xl bg-red-600 px-6 py-2 border border-red-400 hover:bg-red-700 transition font-medium"
-            onClick={() => {
-              socket?.disconnect();
-              router.push("/");
-            }}
-          >
-            Leave
-          </button>
         </div>
       </div>
     </section>

@@ -72,19 +72,16 @@ export const useSocketChat = (roomId?: string) => {
     // ----------------------------
     if (joinedRef.current) return;
     joinedRef.current = true;
+
     const joinRoom = () => {
-      console.log("🟢 joining room:", roomId);
+      console.log("💬 Chat joining room:", roomId);
       setConnected(true);
       setSelfSocketId(socket.id!);
       socket.emit("join-room", roomId);
     };
 
-    // Only connect if not already connected
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    // Handle both fast & slow connections
+    // Socket should already be connected (autoConnect: true in getSocket)
+    // But handle both cases for safety
     if (socket.connected) {
       joinRoom();
     } else {

@@ -2,102 +2,96 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useMediasoupContext } from "@/providers/MediasoupProvider";
-// ✅ Correct type imports for Mediasoup Client
-import { Device, types } from "mediasoup-client";
+import { types } from "mediasoup-client";
 
-// Use the internal types namespace for cleaner code
 type Transport = types.Transport;
-type Producer = types.Producer;
-type Consumer = types.Consumer;
-
 
 export const useMediasoupCall = (roomId: string) => {
-    
   const { socket, device, isInitialized } = useMediasoupContext();
-  
-  // Local Media State
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  
+  // Note: remoteStreams is managed by the Provider, but we can access it here if needed
+  const { remoteStreams } = useMediasoupContext();
 
-  // We use Refs for Transports to avoid re-renders during the connection handshake
   const sendTransport = useRef<Transport | null>(null);
   const recvTransport = useRef<Transport | null>(null);
 
-  /* -----------------------------------------------------------
-     1. CREATE TRANSPORT (The Bridge)
-  ----------------------------------------------------------- */
-  const createTransport = useCallback(async (direction: 'send' | 'recv') => {
-    if (!socket || !device) return;
+  /* --- 1. CREATE TRANSPORT (Modified to return a Promise) --- */
+  const createTransport = useCallback(async (direction: 'send' | 'recv'): Promise<Transport | null> => {
+    if (!socket || !device) return null;
 
-    // Ask server to create a WebRtcTransport
-    socket.emit("createWebRtcTransport", { direction }, async (params: any) => {
-      if (params.error) {
-        console.error("Transport creation error:", params.error);
-        return;
-      }
+    return new Promise((resolve) => {
+      socket.emit("createWebRtcTransport", { direction }, async (params: any) => {
+        if (params.error) {
+          console.error("Transport error:", params.error);
+          resolve(null);
+          return;
+        }
 
-      // Create the transport on the client side
-      const transport = direction === 'send' 
-        ? device.createSendTransport(params) 
-        : device.createRecvTransport(params);
+        const transport = direction === 'send' 
+          ? device.createSendTransport(params) 
+          : device.createRecvTransport(params);
 
-      // --- CRITICAL HANDSHAKE 1: Connect ---
-      transport.on("connect", ({ dtlsParameters }, callback, errback) => {
-        socket.emit("connectWebRtcTransport", { transportId: transport.id, dtlsParameters }, (response: any) => {
-          if (response.error) return errback(response.error);
-          callback();
-        });
-      });
-
-      if (direction === 'send') {
-        // --- CRITICAL HANDSHAKE 2: Produce (Send Only) ---
-        transport.on("produce", ({ kind, rtpParameters, appData }, callback, errback) => {
-          socket.emit("produce", { transportId: transport.id, kind, rtpParameters, appData }, (response: any) => {
+        transport.on("connect", ({ dtlsParameters }, callback, errback) => {
+          socket.emit("connectWebRtcTransport", { transportId: transport.id, dtlsParameters }, (response: any) => {
             if (response.error) return errback(response.error);
-            callback({ id: response.id });
+            callback();
           });
         });
-        sendTransport.current = transport;
-      } else {
-        recvTransport.current = transport;
-      }
+
+        if (direction === 'send') {
+          transport.on("produce", ({ kind, rtpParameters, appData }, callback, errback) => {
+            socket.emit("produce", { transportId: transport.id, kind, rtpParameters, appData }, (response: any) => {
+              if (response.error) return errback(response.error);
+              callback({ id: response.id });
+            });
+          });
+          sendTransport.current = transport;
+        } else {
+          recvTransport.current = transport;
+        }
+        
+        resolve(transport);
+      });
     });
   }, [socket, device]);
 
-  /* -----------------------------------------------------------
-     2. START PRODUCING (Camera/Mic)
-  ----------------------------------------------------------- */
+  /* --- 2. START PRODUCING (Awaiting the transport correctly) --- */
   const startProducing = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setLocalStream(stream);
 
-      if (!sendTransport.current) await createTransport('send');
+      // ✅ Wait for transport to be fully created before proceeding
+      let transport = sendTransport.current;
+      if (!transport) {
+        transport = await createTransport('send');
+      }
+
+      if (!transport) throw new Error("Failed to create send transport");
 
       const videoTrack = stream.getVideoTracks()[0];
       const audioTrack = stream.getAudioTracks()[0];
 
-      if (videoTrack) await sendTransport.current?.produce({ track: videoTrack });
-      if (audioTrack) await sendTransport.current?.produce({ track: audioTrack });
+      if (videoTrack) await transport.produce({ track: videoTrack });
+      if (audioTrack) await transport.produce({ track: audioTrack });
       
+      console.log("✅ Successfully producing local media");
     } catch (err) {
-      console.error("Error accessing media devices:", err);
+      console.error("Error producing media:", err);
     }
   }, [createTransport]);
 
-  /* -----------------------------------------------------------
-     3. LIFECYCLE
-  ----------------------------------------------------------- */
   useEffect(() => {
     if (isInitialized && socket) {
       socket.emit("joinRoom", { roomId });
-      createTransport('recv'); // Prepare to receive others
+      createTransport('recv'); 
     }
   }, [isInitialized, socket, roomId, createTransport]);
 
   return {
     localStream,
-    remoteStreams,
+    remoteStreams, // Coming from context
     startProducing,
     isReady: isInitialized
   };

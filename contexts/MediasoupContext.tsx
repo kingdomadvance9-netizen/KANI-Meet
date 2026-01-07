@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useRef, useState, useEffect } from "react";
 import type { Socket } from "socket.io-client";
-import { io } from "socket.io-client";
+import { getSocket } from "@/lib/socket";
 import { Device, types } from "mediasoup-client";
 
 interface Participant {
@@ -77,24 +77,34 @@ export const MediasoupProvider = ({
   const screenProducerRef = useRef<types.Producer | null>(null);
   const currentRoomIdRef = useRef<string | null>(null);
   const hasJoinedRef = useRef<boolean>(false);
+  const peerIdToUserIdRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    const socketInstance = io(
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080",
-      {
-        transports: ["websocket"],
-        autoConnect: true,
-      }
-    );
+    // Use the shared socket instance
+    const socketInstance = getSocket();
 
-    socketInstance.on("connect", () => {
-      console.log("✅ Socket connected:", socketInstance.id);
+    // Set up event listeners
+    const handleConnect = () => {
+      console.log("✅ Mediasoup socket connected:", socketInstance.id);
       setSocket(socketInstance);
-    });
+    };
 
-    socketInstance.on("disconnect", () => {
-      console.log("❌ Socket disconnected");
-    });
+    const handleReconnect = () => {
+      console.log("🔄 Mediasoup socket reconnected:", socketInstance.id);
+    };
+
+    const handleDisconnect = () => {
+      console.log("❌ Mediasoup socket disconnected");
+    };
+
+    // If already connected, trigger handler immediately
+    if (socketInstance.connected) {
+      handleConnect();
+    }
+
+    socketInstance.on("connect", handleConnect);
+    socketInstance.on("reconnect", handleReconnect);
+    socketInstance.on("disconnect", handleDisconnect);
 
     socketInstance.on(
       "participant-list-update",
@@ -109,7 +119,101 @@ export const MediasoupProvider = ({
           );
         });
 
-        setParticipants(updatedList);
+        // WORKAROUND: Correlate unmapped streams with new participants
+        // When a new participant appears and we have streams keyed by socket IDs,
+        // try to remap them to user IDs
+        setParticipants((prevParticipants) => {
+          const newParticipantIds = updatedList
+            .map((p) => p.id)
+            .filter((id) => !prevParticipants.find((prev) => prev.id === id));
+
+          if (newParticipantIds.length > 0) {
+            console.log("🆕 New participants detected:", newParticipantIds);
+
+            // Check if we have any unmapped streams (keyed by socket IDs)
+            setRemoteStreams((prevStreams) => {
+              const newStreamsMap = new Map(prevStreams);
+              const socketIdKeys = Array.from(prevStreams.keys()).filter(
+                (key) => !key.startsWith("user_")
+              );
+
+              console.log(
+                "🔍 Checking for unmapped socket ID streams:",
+                socketIdKeys
+              );
+
+              // If we have unmapped streams and new participants, correlate them
+              if (
+                socketIdKeys.length > 0 &&
+                newParticipantIds.length === socketIdKeys.length
+              ) {
+                socketIdKeys.forEach((socketId, index) => {
+                  const userId = newParticipantIds[index];
+                  const stream = prevStreams.get(socketId);
+                  if (stream && userId) {
+                    // Move stream from socket ID key to user ID key
+                    newStreamsMap.set(userId, stream);
+                    newStreamsMap.delete(socketId);
+                    peerIdToUserIdRef.current.set(socketId, userId);
+                    console.log("🔄 Remapped stream:", socketId, "→", userId);
+                  }
+                });
+              }
+
+              return newStreamsMap;
+            });
+          }
+
+          return updatedList;
+        });
+
+        // Also try to request socket-to-user mapping (if server supports it)
+        updatedList.forEach((participant) => {
+          socketInstance.emit(
+            "get-socket-id-for-user",
+            { userId: participant.id },
+            (response: any) => {
+              if (response && response.socketId) {
+                peerIdToUserIdRef.current.set(
+                  response.socketId,
+                  participant.id
+                );
+                console.log(
+                  "🔗 Mapped socket to user (from server):",
+                  response.socketId,
+                  "→",
+                  participant.id
+                );
+
+                // Also remap the stream if it exists
+                setRemoteStreams((prev) => {
+                  const newMap = new Map(prev);
+                  const stream = prev.get(response.socketId);
+                  if (stream) {
+                    newMap.set(participant.id, stream);
+                    newMap.delete(response.socketId);
+                    console.log(
+                      "🔄 Remapped stream via server response:",
+                      response.socketId,
+                      "→",
+                      participant.id
+                    );
+                  }
+                  return newMap;
+                });
+              }
+            }
+          );
+        });
+      }
+    );
+
+    // Map socket.id to userId when we join
+    socketInstance.on(
+      "socket-user-mapping",
+      ({ socketId, userId }: { socketId: string; userId: string }) => {
+        console.log("🔗 Mapping socket to user:", socketId, "→", userId);
+        peerIdToUserIdRef.current.set(socketId, userId);
       }
     );
 
@@ -199,7 +303,17 @@ export const MediasoupProvider = ({
     );
 
     return () => {
-      socketInstance.disconnect();
+      // Clean up event listeners but don't disconnect the shared socket
+      // as it may be used by other components (e.g., chat)
+      socketInstance.off("connect", handleConnect);
+      socketInstance.off("reconnect", handleReconnect);
+      socketInstance.off("disconnect", handleDisconnect);
+      socketInstance.off("participant-list-update");
+      socketInstance.off("participant-left");
+      socketInstance.off("force-mute");
+      socketInstance.off("force-video-pause");
+      socketInstance.off("kicked-from-room");
+      socketInstance.off("new-producer");
     };
   }, []);
 
@@ -290,6 +404,13 @@ export const MediasoupProvider = ({
         "🎉 Joined mediasoup room, existing producers:",
         existingProducers
       );
+      console.log("📝 Producer details:", {
+        isArray: Array.isArray(existingProducers),
+        length: existingProducers?.length,
+        items: existingProducers,
+        firstItem: existingProducers?.[0],
+        firstItemType: typeof existingProducers?.[0],
+      });
 
       // Step 4: Create Send Transport
       await createSendTransport(socket, newDevice, roomId);
@@ -299,16 +420,56 @@ export const MediasoupProvider = ({
 
       // Step 6: Consume Existing Producers
       if (existingProducers && existingProducers.length > 0) {
-        for (const producerId of existingProducers) {
-          await consumeProducer(socket, newDevice, roomId, producerId);
+        console.log("🔄 Starting to consume existing producers...");
+        for (const item of existingProducers) {
+          // Handle both string IDs and objects
+          const producerId =
+            typeof item === "string" ? item : item?.id || item?.producerId;
+
+          if (producerId) {
+            console.log("➡️ Consuming producer:", producerId);
+            await consumeProducer(socket, newDevice, roomId, producerId);
+          } else {
+            console.error("❌ Invalid producer item:", item);
+          }
         }
+      } else {
+        console.log("ℹ️ No existing producers to consume");
       }
 
       // Step 7: Listen for New Producers
       socket.on(
         "new-producer",
-        async ({ producerId }: { producerId: string }) => {
-          console.log("🆕 New producer detected:", producerId);
+        async ({
+          producerId,
+          peerId,
+          kind,
+          userId: producerUserId,
+        }: {
+          producerId: string;
+          peerId?: string;
+          kind?: string;
+          userId?: string;
+        }) => {
+          console.log("🆕 New producer detected:", {
+            producerId,
+            peerId,
+            kind,
+            userId: producerUserId,
+            from: peerId || "unknown",
+          });
+
+          // Map peerId to userId if provided
+          if (peerId && producerUserId) {
+            peerIdToUserIdRef.current.set(peerId, producerUserId);
+            console.log(
+              "🔗 Mapped producer peer to user:",
+              peerId,
+              "→",
+              producerUserId
+            );
+          }
+
           await consumeProducer(socket, newDevice, roomId, producerId);
         }
       );
@@ -355,16 +516,29 @@ export const MediasoupProvider = ({
       );
     });
 
-    transport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
-      socket.emit(
-        "produce",
-        { roomId, transportId: transport.id, kind, rtpParameters },
-        (response: any) => {
-          if (response.error) return errback(response.error);
-          callback({ id: response.id });
-        }
-      );
-    });
+    transport.on(
+      "produce",
+      ({ kind, rtpParameters, appData }, callback, errback) => {
+        console.log(`📤 Producing ${kind} for transport:`, transport.id);
+        socket.emit(
+          "produce",
+          { roomId, transportId: transport.id, kind, rtpParameters, appData },
+          (response: any) => {
+            if (response.error) {
+              console.error("❌ Produce error:", response.error);
+              return errback(response.error);
+            }
+            console.log(
+              `✅ Producer created with ID:`,
+              response.id,
+              "for",
+              kind
+            );
+            callback({ id: response.id });
+          }
+        );
+      }
+    );
 
     sendTransportRef.current = transport;
     console.log("🚚 Send transport created");
@@ -414,21 +588,33 @@ export const MediasoupProvider = ({
     roomId: string,
     producerId: string
   ) => {
+    console.log("🔍 Attempting to consume producer:", producerId);
+
     const data = await new Promise<any>((resolve, reject) => {
       socket.emit(
         "consume",
         { roomId, producerId, rtpCapabilities: device.rtpCapabilities },
         (response: any) => {
           if (response.error) {
+            console.error("❌ Consume error:", response.error);
             reject(response.error);
           } else {
+            console.log("✅ Consume response:", response);
+            console.log("📊 Response keys:", Object.keys(response));
+            console.log(
+              "📊 Response details:",
+              JSON.stringify(response, null, 2)
+            );
             resolve(response);
           }
         }
       );
     });
 
-    if (!recvTransportRef.current) return;
+    if (!recvTransportRef.current) {
+      console.error("❌ No receive transport available");
+      return;
+    }
 
     const consumer = await recvTransportRef.current.consume({
       id: data.id,
@@ -437,20 +623,67 @@ export const MediasoupProvider = ({
       rtpParameters: data.rtpParameters,
     });
 
+    console.log("📦 Consumer created:", {
+      id: consumer.id,
+      kind: consumer.kind,
+      producerId: consumer.producerId,
+    });
+
     socket.emit("resume-consumer", { roomId, consumerId: consumer.id });
 
     const { track } = consumer;
-    const peerId = data.peerId || data.producerId; // Adjust based on your server response
+
+    // Extract user/peer identification from response
+    // Priority: data.userId (if server sends it) > mapped userId from socketId > socketId as fallback
+    const socketPeerId =
+      data.peerId || data.producerSocketId || data.from || producerId;
+    let userId = data.userId || data.producerUserId;
+
+    if (!userId) {
+      // Try to get userId from our mapping
+      userId = peerIdToUserIdRef.current.get(socketPeerId);
+    }
+
+    if (!userId) {
+      // Fallback: use socketPeerId as key (will be updated when we get participant list)
+      userId = socketPeerId;
+      console.log(
+        "⚠️ No userId mapping found, using socketPeerId as temporary key"
+      );
+    }
+
+    console.log(
+      `🎬 Consuming ${data.kind} from:`,
+      "socketPeerId:",
+      socketPeerId,
+      "→ userId:",
+      userId,
+      "(track id:",
+      track.id,
+      ")"
+    );
 
     setRemoteStreams((prev) => {
       const newMap = new Map(prev);
-      const existingStream = newMap.get(peerId) || new MediaStream();
-      existingStream.addTrack(track);
-      newMap.set(peerId, existingStream);
+      const existingStream = newMap.get(userId) || new MediaStream();
+
+      // Check if track already exists to avoid duplicates
+      const existingTrack = existingStream
+        .getTracks()
+        .find((t) => t.id === track.id);
+      if (!existingTrack) {
+        existingStream.addTrack(track);
+        console.log(
+          `✅ Added ${data.kind} track to stream for userId:`,
+          userId
+        );
+      } else {
+        console.log(`⚠️ Track already exists in stream for userId:`, userId);
+      }
+
+      newMap.set(userId, existingStream);
       return newMap;
     });
-
-    console.log(`🎬 Consuming ${data.kind} from peer:`, peerId);
   };
 
   // Start Audio
