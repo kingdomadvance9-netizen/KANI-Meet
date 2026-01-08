@@ -139,24 +139,37 @@ export default function PaymentModal({
     setStatus("loading");
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/initiate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            userId,
-            userName: userName || "Anonymous",
-            phoneNumber,
-            amount: parseFloat(amount),
-            accountReference: accountType,
-          }),
-        }
-      );
+      const apiUrl = `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/initiate`;
+      console.log("🔗 Calling M-Pesa API:", apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          userName: userName || "Anonymous",
+          phoneNumber,
+          amount: parseFloat(amount),
+          accountReference: accountType,
+        }),
+      });
+
+      console.log("📡 M-Pesa API Response Status:", response.status);
+
+      // Check if response is JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("❌ Expected JSON but got:", text.substring(0, 200));
+        throw new Error(
+          `API returned HTML instead of JSON. Check that NEXT_PUBLIC_SOCKET_URL (${process.env.NEXT_PUBLIC_SOCKET_URL}) is correct and the endpoint exists.`
+        );
+      }
 
       const result = await response.json();
+      console.log("📦 M-Pesa API Result:", result);
 
       if (response.ok && result.success && result.data) {
         const { checkoutRequestId: reqId } = result.data;
