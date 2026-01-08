@@ -56,9 +56,9 @@ export default function PaymentModal({
 
   const checkPaymentStatus = async (requestId: string) => {
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/status/${requestId}`
-      );
+      const baseUrl =
+        process.env.NEXT_PUBLIC_SOCKET_URL?.replace(/\/$/, "") || "";
+      const response = await fetch(`${baseUrl}/api/mpesa/status/${requestId}`);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -228,7 +228,9 @@ export default function PaymentModal({
     setStatus("loading");
 
     try {
-      const apiUrl = `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/initiate`;
+      const baseUrl =
+        process.env.NEXT_PUBLIC_SOCKET_URL?.replace(/\/$/, "") || "";
+      const apiUrl = `${baseUrl}/api/mpesa/initiate`;
       console.log("🔗 Calling M-Pesa API:", apiUrl);
 
       const response = await fetch(apiUrl, {
