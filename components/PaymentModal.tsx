@@ -57,7 +57,18 @@ export default function PaymentModal({
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SOCKET_URL}/api/mpesa/status/${requestId}`
       );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+
+      console.log("💰 Payment status check:", {
+        requestId,
+        attempt: pollingCountRef.current + 1,
+        response: data,
+      });
 
       pollingCountRef.current += 1;
 
@@ -77,14 +88,14 @@ export default function PaymentModal({
         setTimeout(() => {
           handleClose();
         }, 1500);
-      } else if (data.status === "NOT_FOUND") {
-        // Transaction not found - error
+      } else if (data.status === "NOT_FOUND" || data.status === "FAILED") {
+        // Transaction not found or failed - error
         setStatus("error");
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
-        const errorMsg = data.message || "Transaction not found";
+        const errorMsg = data.message || "Transaction failed";
         toast.error(errorMsg);
         if (onError) {
           onError(errorMsg);
@@ -105,7 +116,7 @@ export default function PaymentModal({
         // Otherwise continue polling
       }
     } catch (error) {
-      console.error("Error checking payment status:", error);
+      console.error("❌ Error checking payment status:", error);
       pollingCountRef.current += 1;
 
       if (pollingCountRef.current >= maxPollingAttempts) {
