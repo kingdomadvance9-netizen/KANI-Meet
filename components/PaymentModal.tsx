@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, CreditCard, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface PaymentModalProps {
   userId: string;
@@ -67,7 +68,9 @@ export default function PaymentModal({
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
-        alert(`Payment successful! Receipt: ${data.data.mpesaReceiptNumber}`);
+        toast.success(
+          `Payment successful! Receipt: ${data.data.mpesaReceiptNumber}`
+        );
         if (onSuccess) {
           onSuccess(data.data.id);
         }
@@ -82,7 +85,7 @@ export default function PaymentModal({
           pollingIntervalRef.current = null;
         }
         const errorMsg = data.message || "Transaction not found";
-        alert(errorMsg);
+        toast.error(errorMsg);
         if (onError) {
           onError(errorMsg);
         }
@@ -95,7 +98,7 @@ export default function PaymentModal({
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          alert(
+          toast.warning(
             "Payment verification timeout. Please check your transaction history."
           );
         }
@@ -112,7 +115,7 @@ export default function PaymentModal({
           pollingIntervalRef.current = null;
         }
         const errorMsg = "Failed to verify payment status";
-        alert(errorMsg);
+        toast.error(errorMsg);
         if (onError) {
           onError(errorMsg);
         }
@@ -149,8 +152,10 @@ export default function PaymentModal({
         setCheckoutRequestId(reqId);
         setStatus("checkingStatus");
 
-        // Show alert
-        alert("Check your phone for M-Pesa PIN prompt");
+        // Show toast
+        toast.info("Check your phone for M-Pesa PIN prompt", {
+          duration: 5000,
+        });
 
         // Start polling after 5 seconds
         pollingCountRef.current = 0;
@@ -162,7 +167,7 @@ export default function PaymentModal({
       } else {
         setStatus("error");
         const errorMsg = result.message || "Failed to initiate payment";
-        alert(errorMsg);
+        toast.error(errorMsg);
         if (onError) {
           onError(errorMsg);
         }
@@ -171,7 +176,7 @@ export default function PaymentModal({
       setStatus("error");
       const errorMsg =
         error.message || "An error occurred while initiating payment";
-      alert(errorMsg);
+      toast.error(errorMsg);
       if (onError) {
         onError(errorMsg);
       }

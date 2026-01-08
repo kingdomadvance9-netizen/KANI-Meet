@@ -180,18 +180,21 @@ const CustomCallControls = () => {
 
       {/* Dropdown Menu - Rendered via Portal */}
       {isMenuOpen &&
-        buttonRect &&
         typeof window !== "undefined" &&
         createPortal(
           <div
-            style={{
-              position: "fixed",
-              bottom: `${window.innerHeight - buttonRect.top + 8}px`,
-              right: `${window.innerWidth - buttonRect.right}px`,
+            className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={(e) => {
+              // Close menu when clicking the backdrop (not the menu itself)
+              if (e.target === e.currentTarget) {
+                setIsMenuOpen(false);
+              }
             }}
-            className="z-[9999]"
           >
-            <div className="bg-dark-2 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[200px] backdrop-blur-md">
+            <div
+              className="relative bg-dark-2 border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden w-full max-w-xs sm:max-w-sm backdrop-blur-md animate-in slide-in-from-bottom-4 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
               {/* Screen Share Option */}
               <button
                 onClick={() => {
@@ -199,7 +202,7 @@ const CustomCallControls = () => {
                   setIsMenuOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 transition-all touch-manipulation active:bg-dark-4",
+                  "w-full flex items-center gap-3 px-4 py-3.5 transition-all touch-manipulation active:bg-dark-4",
                   isScreenSharing
                     ? "bg-blue-500/20 text-blue-400"
                     : "text-gray-300 hover:bg-dark-3"
@@ -217,7 +220,7 @@ const CustomCallControls = () => {
                   setShowPayment(true);
                   setIsMenuOpen(false);
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3 transition-all touch-manipulation active:bg-dark-4 text-gray-300 hover:bg-dark-3"
+                className="w-full flex items-center gap-3 px-4 py-3.5 transition-all touch-manipulation active:bg-dark-4 text-gray-300 hover:bg-dark-3 border-t border-white/5"
               >
                 <Banknote className="w-5 h-5" />
                 <span className="text-sm font-medium">Pay with M-Pesa</span>
@@ -228,7 +231,7 @@ const CustomCallControls = () => {
                 <button
                   onClick={toggleRecording}
                   className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 transition-all touch-manipulation active:bg-dark-4",
+                    "w-full flex items-center gap-3 px-4 py-3.5 transition-all touch-manipulation active:bg-dark-4 border-t border-white/5",
                     isRecording
                       ? "bg-red-500/20 text-red-400"
                       : "text-gray-300 hover:bg-dark-3"
