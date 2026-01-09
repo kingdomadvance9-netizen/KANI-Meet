@@ -14,6 +14,7 @@ import {
   Search,
   MonitorOff,
   Monitor,
+  Shield,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useHostControls } from "@/hooks/useHostControls";
+import { useMediasoupContext } from "@/contexts/MediasoupContext";
 
 interface Participant {
   id: string;
@@ -32,6 +34,7 @@ interface Participant {
   isAudioMuted: boolean;
   isVideoPaused: boolean;
   isHost: boolean;
+  isCoHost?: boolean;
 }
 
 interface ParticipantSidebarProps {
@@ -54,6 +57,13 @@ const ParticipantSidebar = ({
   const [showHostControls, setShowHostControls] = useState(false);
 
   const {
+    makeCoHost,
+    removeCoHost,
+    isHost: contextIsHost,
+    isCoHost: contextIsCoHost,
+  } = useMediasoupContext();
+
+  const {
     toggleRemoteAudio,
     toggleRemoteVideo,
     removeParticipant,
@@ -67,7 +77,9 @@ const ParticipantSidebar = ({
 
   // Find current user in participant list
   const currentUser = participants.find((p) => p.id === user?.id);
-  const isHost = currentUser?.isHost || false;
+  const isHost = contextIsHost || false;
+  const isCoHost = contextIsCoHost || false;
+  const hasHostPrivileges = isHost || isCoHost;
 
   // Filter participants by search
   const filtered = participants.filter((p) =>
@@ -98,7 +110,7 @@ const ParticipantSidebar = ({
         </div>
 
         {/* Host Controls Button */}
-        {isHost && (
+        {hasHostPrivileges && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -252,12 +264,17 @@ const ParticipantSidebar = ({
                       </span>
                     </div>
 
-                    {/* Host/Participant Badge */}
+                    {/* Host/Co-Host/Participant Badge */}
                     <div className="flex items-center gap-2 mt-1">
                       {participant.isHost ? (
                         <span className="text-xs text-yellow-400 font-medium flex items-center gap-1">
                           <Crown size={12} />
                           Host
+                        </span>
+                      ) : participant.isCoHost ? (
+                        <span className="text-xs text-blue-400 font-medium flex items-center gap-1">
+                          <Shield size={12} />
+                          Co-Host
                         </span>
                       ) : (
                         <span className="text-xs text-gray-500">
@@ -284,12 +301,40 @@ const ParticipantSidebar = ({
                 </div>
 
                 {/* Right side: Host Controls Menu */}
-                {isHost && !isMe && showHostControls && (
+                {hasHostPrivileges && !isMe && showHostControls && (
                   <DropdownMenu>
                     <DropdownMenuTrigger className="p-2 hover:bg-[#2a2c36] rounded transition">
                       <MoreVertical className="w-4 h-4 text-gray-400" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="bg-[#1f212a] text-white border border-gray-700 w-[200px]">
+                      {/* Host/Co-Host Options */}
+                      {!participant.isHost &&
+                        (participant.isCoHost ? (
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              removeCoHost(participant.id);
+                            }}
+                            className="hover:bg-[#2a2c36] cursor-pointer text-orange-400"
+                          >
+                            <Shield className="w-4 h-4 mr-2" />
+                            Remove Co-Host
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              makeCoHost(participant.id);
+                            }}
+                            className="hover:bg-[#2a2c36] cursor-pointer"
+                          >
+                            <Shield className="w-4 h-4 mr-2" />
+                            Make Co-Host
+                          </DropdownMenuItem>
+                        ))}
+
+                      <DropdownMenuSeparator className="bg-gray-700" />
+
                       <DropdownMenuItem
                         onSelect={(e) => {
                           e.preventDefault();

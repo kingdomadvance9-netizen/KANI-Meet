@@ -13,6 +13,7 @@ interface Participant {
   isAudioMuted: boolean;
   isVideoPaused: boolean;
   isHost: boolean;
+  isCoHost?: boolean;
 }
 
 type MediasoupContextType = {
@@ -37,11 +38,14 @@ type MediasoupContextType = {
   isScreenSharing: boolean;
   isScreenShareGloballyEnabled: boolean;
   isHost: boolean;
+  isCoHost: boolean;
   forceMuted: boolean;
   forceVideoPaused: boolean;
   globalVideoDisabled: boolean;
   makeHost: (participantId: string) => void;
   removeHost: (participantId: string) => void;
+  makeCoHost: (participantId: string) => void;
+  removeCoHost: (participantId: string) => void;
   joinRoom: (
     roomId: string,
     userId: string,
@@ -103,6 +107,7 @@ export const MediasoupProvider = ({
   const [isScreenShareGloballyEnabled, setIsScreenShareGloballyEnabled] =
     useState(true);
   const [isHost, setIsHost] = useState(false);
+  const [isCoHost, setIsCoHost] = useState(false);
   const [forceMuted, setForceMuted] = useState(false);
   const [forceVideoPaused, setForceVideoPaused] = useState(false);
   const [globalVideoDisabled, setGlobalVideoDisabled] = useState(false);
@@ -346,6 +351,63 @@ export const MediasoupProvider = ({
         );
       }
     );
+
+    // ✅ Listen for participant updates (including co-host changes)
+    socketInstance.on(
+      "participant-updated",
+      ({
+        participantId,
+        updates,
+      }: {
+        participantId: string;
+        updates: Partial<Participant>;
+      }) => {
+        console.log("🔄 Participant updated:", { participantId, updates });
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === participantId ? { ...p, ...updates } : p))
+        );
+
+        // If it's the current user being updated, update their own status
+        if (participantId === currentUserIdRef.current) {
+          if (updates.isHost !== undefined) {
+            console.log("👑 Updating own isHost status:", updates.isHost);
+            setIsHost(updates.isHost);
+          }
+          if (updates.isCoHost !== undefined) {
+            console.log("🤝 Updating own isCoHost status:", updates.isCoHost);
+            setIsCoHost(updates.isCoHost);
+          }
+        }
+      }
+    );
+
+    // ✅ Listen for co-host granted notification
+    socketInstance.on("cohost-granted", ({ by }: { by: string }) => {
+      console.log(`🤝 You were promoted to co-host by ${by}`);
+      setIsCoHost(true);
+      toast.success(`${by} made you a co-host!`);
+    });
+
+    // ✅ Listen for co-host revoked notification
+    socketInstance.on("cohost-revoked", ({ by }: { by: string }) => {
+      console.log(`👤 Your co-host status was removed by ${by}`);
+      setIsCoHost(false);
+      toast.info(`${by} removed your co-host status`);
+    });
+
+    // ✅ Listen for host granted notification
+    socketInstance.on("host-granted", ({ by }: { by: string }) => {
+      console.log(`👑 You were promoted to host by ${by}`);
+      toast.success(`${by} made you a host!`);
+      setIsHost(true);
+    });
+
+    // ✅ Listen for host revoked notification
+    socketInstance.on("host-revoked", ({ by }: { by: string }) => {
+      console.log(`👤 Your host status was removed by ${by}`);
+      toast.info(`${by} removed your host status`);
+      setIsHost(false);
+    });
 
     // ✅ Force control events from host
     socketInstance.on(
@@ -799,28 +861,46 @@ export const MediasoupProvider = ({
         userImageUrl: userImageUrl ? "provided" : "missing",
         isCreator,
       });
-      const { existingProducers } = await new Promise<any>(
-        (resolve, reject) => {
-          socket.emit(
-            "join-mediasoup-room",
-            {
-              roomId,
-              rtpCapabilities: newDevice.rtpCapabilities,
-              userId,
-              userName,
-              userImageUrl,
-              isCreator,
-            },
-            (response: any) => {
-              if (response.error) {
-                reject(response.error);
-              } else {
-                resolve(response);
-              }
+      const {
+        existingProducers,
+        isHost: backendIsHost,
+        isCoHost: backendIsCoHost,
+      } = await new Promise<any>((resolve, reject) => {
+        socket.emit(
+          "join-mediasoup-room",
+          {
+            roomId,
+            rtpCapabilities: newDevice.rtpCapabilities,
+            userId,
+            userName,
+            userImageUrl,
+            isCreator,
+          },
+          (response: any) => {
+            if (response.error) {
+              reject(response.error);
+            } else {
+              console.log("✅ Join response from backend:", {
+                isHost: response.isHost,
+                isCoHost: response.isCoHost,
+                existingProducers: response.existingProducers?.length,
+              });
+              resolve(response);
             }
-          );
-        }
-      );
+          }
+        );
+      });
+
+      // Set host status from backend response
+      if (backendIsHost !== undefined) {
+        console.log("👑 Setting isHost from backend:", backendIsHost);
+        setIsHost(backendIsHost);
+      }
+      if (backendIsCoHost !== undefined) {
+        console.log("🤝 Setting isCoHost from backend:", backendIsCoHost);
+        setIsCoHost(backendIsCoHost);
+      }
+
       console.log(
         "🎉 Joined mediasoup room, existing producers:",
         existingProducers
@@ -1614,29 +1694,116 @@ export const MediasoupProvider = ({
   const makeHost = (participantId: string) => {
     if (!socket || !isHost) {
       console.warn(
-        "⚠️ Cannot make host: not authorized or socket not connected"
+        "⚠️ Cannot make host: not authorized or socket not connected",
+        { socket: !!socket, isHost }
       );
+      toast.error("Cannot make host: not authorized");
       return;
     }
-    console.log("👑 Making participant host:", participantId);
+    if (!currentRoomIdRef.current) {
+      console.error("⚠️ No room ID available");
+      toast.error("No room ID available");
+      return;
+    }
+    console.log(
+      "👑 Making participant host:",
+      participantId,
+      "in room:",
+      currentRoomIdRef.current
+    );
     socket.emit("make-host", {
       roomId: currentRoomIdRef.current,
       participantId,
     });
+    console.log("✅ make-host event emitted");
   };
 
   const removeHost = (participantId: string) => {
     if (!socket || !isHost) {
       console.warn(
-        "⚠️ Cannot remove host: not authorized or socket not connected"
+        "⚠️ Cannot remove host: not authorized or socket not connected",
+        { socket: !!socket, isHost }
       );
+      toast.error("Cannot remove host: not authorized");
       return;
     }
-    console.log("👤 Removing host status:", participantId);
+    if (!currentRoomIdRef.current) {
+      console.error("⚠️ No room ID available");
+      toast.error("No room ID available");
+      return;
+    }
+    console.log(
+      "👤 Removing host status:",
+      participantId,
+      "in room:",
+      currentRoomIdRef.current
+    );
     socket.emit("remove-host", {
       roomId: currentRoomIdRef.current,
       participantId,
     });
+    console.log("✅ remove-host event emitted");
+  };
+
+  const makeCoHost = (participantId: string) => {
+    console.log("🔍 makeCoHost called:", {
+      participantId,
+      socket: !!socket,
+      isHost,
+      currentRoomId: currentRoomIdRef.current,
+    });
+
+    if (!socket || !isHost) {
+      console.warn(
+        "⚠️ Cannot make co-host: not authorized or socket not connected",
+        { socket: !!socket, isHost }
+      );
+      toast.error("Cannot make co-host: not authorized");
+      return;
+    }
+    if (!currentRoomIdRef.current) {
+      console.error("⚠️ No room ID available");
+      toast.error("No room ID available");
+      return;
+    }
+    console.log(
+      "🤝 Making participant co-host:",
+      participantId,
+      "in room:",
+      currentRoomIdRef.current
+    );
+    socket.emit("make-cohost", {
+      roomId: currentRoomIdRef.current,
+      participantId,
+    });
+    console.log("✅ make-cohost event emitted");
+  };
+
+  const removeCoHost = (participantId: string) => {
+    if (!socket || !isHost) {
+      console.warn(
+        "⚠️ Cannot remove co-host: not authorized or socket not connected",
+        { socket: !!socket, isHost }
+      );
+      toast.error("Cannot remove co-host: not authorized");
+      return;
+    }
+    if (!currentRoomIdRef.current) {
+      console.error("⚠️ No room ID available");
+      toast.error("No room ID available");
+      return;
+    }
+    console.log(
+      "👤 Removing co-host status:",
+      participantId,
+      "in room:",
+      currentRoomIdRef.current
+    );
+    socket.emit("remove-cohost", {
+      roomId: currentRoomIdRef.current,
+      participantId,
+    });
+    console.log("✅ remove-cohost event emitted");
   };
 
   return (
@@ -1663,11 +1830,14 @@ export const MediasoupProvider = ({
         isScreenSharing,
         isScreenShareGloballyEnabled,
         isHost,
+        isCoHost,
         forceMuted,
         forceVideoPaused,
         globalVideoDisabled,
         makeHost,
         removeHost,
+        makeCoHost,
+        removeCoHost,
         joinRoom,
       }}
     >

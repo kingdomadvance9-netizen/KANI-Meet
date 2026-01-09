@@ -37,6 +37,8 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
     isHost: isLocalHost,
     makeHost,
     removeHost,
+    makeCoHost,
+    removeCoHost,
     socket,
   } = useMediasoupContext();
 
@@ -45,14 +47,45 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
 
   // ✅ Handle promoting to host
   const handleMakeHost = (participantId: string, participantName: string) => {
+    console.log("🎯 Attempting to make host:", participantName, participantId);
     makeHost(participantId);
-    toast.success(`Made ${participantName} a host`);
+    toast.info(`Promoting ${participantName} to host...`);
   };
 
   // ✅ Handle removing host status
   const handleRemoveHost = (participantId: string, participantName: string) => {
+    console.log(
+      "🎯 Attempting to remove host:",
+      participantName,
+      participantId
+    );
     removeHost(participantId);
-    toast.success(`Removed host status from ${participantName}`);
+    toast.info(`Removing host status from ${participantName}...`);
+  };
+
+  // ✅ Handle promoting to co-host
+  const handleMakeCoHost = (participantId: string, participantName: string) => {
+    console.log(
+      "🎯 Attempting to make co-host:",
+      participantName,
+      participantId
+    );
+    makeCoHost(participantId);
+    toast.info(`Promoting ${participantName} to co-host...`);
+  };
+
+  // ✅ Handle removing co-host status
+  const handleRemoveCoHost = (
+    participantId: string,
+    participantName: string
+  ) => {
+    console.log(
+      "🎯 Attempting to remove co-host:",
+      participantName,
+      participantId
+    );
+    removeCoHost(participantId);
+    toast.info(`Removing co-host status from ${participantName}...`);
   };
 
   // ✅ ACTION: Mute/Disable for Everyone
@@ -196,7 +229,10 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
                 <span className="text-sm truncate">{p.name || "User"}</span>
                 <span className="text-[10px] text-gray-500 flex items-center gap-1">
                   {p.isHost && <span className="text-yellow-400">👑</span>}
-                  {p.isHost ? "Host" : "Guest"}
+                  {p.isCoHost && !p.isHost && (
+                    <span className="text-blue-400">🤝</span>
+                  )}
+                  {p.isHost ? "Host" : p.isCoHost ? "Co-Host" : "Guest"}
                   {p.id === socket?.id && " (You)"}
                 </span>
               </div>
@@ -230,6 +266,31 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
                       <Crown className="w-4 h-4 mr-2" /> Make Host
                     </DropdownMenuItem>
                   )}
+
+                  {/* Co-Host Options */}
+                  {!p.isHost &&
+                    (p.isCoHost ? (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          handleRemoveCoHost(p.id, p.name);
+                        }}
+                        className="cursor-pointer hover:bg-orange-500/20"
+                      >
+                        <Shield className="w-4 h-4 mr-2" /> Remove Co-Host
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          handleMakeCoHost(p.id, p.name);
+                        }}
+                        className="cursor-pointer hover:bg-blue-500/20"
+                      >
+                        <Shield className="w-4 h-4 mr-2" /> Make Co-Host
+                      </DropdownMenuItem>
+                    ))}
+
                   <DropdownMenuItem
                     onSelect={(e) => {
                       e.preventDefault();

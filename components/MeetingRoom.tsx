@@ -13,6 +13,7 @@ import CustomHostControls from "./CustomHostControls";
 import ParticipantSidebar from "./ParticipantSidebar";
 import { cn } from "@/lib/utils";
 import { useMediasoupContext } from "@/contexts/MediasoupContext";
+import { useGetCallById } from "@/hooks/useGetCallById";
 
 const MeetingRoom = () => {
   const params = useParams();
@@ -33,21 +34,32 @@ const MeetingRoom = () => {
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
 
+  // Get meeting metadata to determine creator
+  const { call } = useGetCallById(roomId);
+
   // ✅ Join the Mediasoup room on mount with user info
   useEffect(() => {
-    if (socket && !isInitialized && user) {
+    if (socket && !isInitialized && user && call) {
       const userName = user.fullName || user.firstName || "Anonymous";
       const userImageUrl = user.imageUrl;
-      console.log("🚀 Joining Mediasoup Room:", roomId, "as", userName);
-      joinRoom(roomId, user.id, userName, userImageUrl, false);
+
+      // ✅ Determine if current user is the creator
+      const isCreator = call.createdBy === user.id;
+
+      console.log("🚀 Joining Mediasoup Room:", roomId, "as", userName, {
+        isCreator,
+        callCreatedBy: call.createdBy,
+        currentUserId: user.id,
+      });
+
+      joinRoom(roomId, user.id, userName, userImageUrl, isCreator);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, isInitialized, user?.id, roomId]);
+  }, [socket, isInitialized, user?.id, roomId, call]);
 
   return (
     <section className="relative h-screen w-full bg-[#0F1115] text-white overflow-hidden">
       {/* Debug component - remove in production */}
-      
 
       <div
         className={cn(

@@ -24,12 +24,13 @@ export const useGetCallById = (id: string | string[]) => {
         // ✅ PHASE 6: Replace with your actual API endpoint
         // const response = await fetch(`/api/meetings/${roomId}`);
         // const data = await response.json();
-        
+
         // Mocking a successful fetch for now so your UI doesn't break
         const mockCall: MeetingRoom = {
           id: roomId,
           description: "Mediasoup Meeting",
           startsAt: new Date().toISOString(),
+          createdBy: "REPLACE_WITH_ACTUAL_CREATOR_ID", // ⚠️ TODO: Set this from your database
         };
 
         setCall(mockCall);
