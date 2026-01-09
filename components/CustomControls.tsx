@@ -33,6 +33,7 @@ const CustomCallControls = () => {
     forceMuted,
     forceVideoPaused,
     globalVideoDisabled,
+    screenShareStreams,
   } = useMediasoupContext();
 
   // Additional States
@@ -143,10 +144,20 @@ const CustomCallControls = () => {
       {/* SCREEN SHARE - Hidden on mobile, visible on tablet+ */}
       <button
         onClick={toggleScreenShare}
+        disabled={!isScreenSharing && screenShareStreams.size > 0}
+        title={
+          !isScreenSharing && screenShareStreams.size > 0
+            ? "Someone is already sharing"
+            : isScreenSharing
+            ? "Stop sharing screen"
+            : "Share screen"
+        }
         className={cn(
           "hidden sm:flex p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           isScreenSharing
             ? "bg-blue-500 text-white"
+            : !isScreenSharing && screenShareStreams.size > 0
+            ? "bg-dark-3/50 text-gray-500 cursor-not-allowed"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4"
         )}
         aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}

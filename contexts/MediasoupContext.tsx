@@ -20,7 +20,9 @@ type MediasoupContextType = {
   device: Device | null;
   participants: Participant[];
   remoteStreams: Map<string, MediaStream>;
+  screenShareStreams: Set<string>; // Track which participants are screen sharing
   localStream: MediaStream | null;
+  localScreenStream: MediaStream | null; // Local screen share stream
   isInitialized: boolean;
   muteAudio: () => void;
   unmuteAudio: () => Promise<void>;
@@ -65,7 +67,12 @@ export const MediasoupProvider = ({
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(
     new Map()
   );
+  const [screenShareStreams, setScreenShareStreams] = useState<Set<string>>(
+    new Set()
+  );
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] =
+    useState<MediaStream | null>(null);
 
   // Media States
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -86,6 +93,18 @@ export const MediasoupProvider = ({
   const currentUserIdRef = useRef<string | null>(null);
   const hasJoinedRef = useRef<boolean>(false);
   const peerIdToUserIdRef = useRef<Map<string, string>>(new Map());
+
+  // Consumer tracking map: consumerId -> { consumer, userId, isScreenShare }
+  const consumersRef = useRef<
+    Map<
+      string,
+      {
+        consumer: types.Consumer;
+        userId: string;
+        isScreenShare: boolean;
+      }
+    >
+  >(new Map());
 
   useEffect(() => {
     // Use the shared socket instance
@@ -447,6 +466,72 @@ export const MediasoupProvider = ({
       toast.success(`${by} allowed cameras to be enabled`);
     });
 
+    // Listen for producer-closed events (standard mediasoup event)
+    socketInstance.on(
+      "producer-closed",
+      ({ producerId }: { producerId: string }) => {
+        console.log("🔴 Producer closed:", producerId);
+
+        // Find and close the associated consumer
+        for (const [consumerId, data] of consumersRef.current.entries()) {
+          if (data.consumer.producerId === producerId) {
+            console.log(
+              "🧹 Cleaning up consumer for closed producer:",
+              consumerId
+            );
+
+            // Stop the track
+            data.consumer.track.stop();
+
+            // Close the consumer
+            data.consumer.close();
+
+            // Remove from consumer map
+            consumersRef.current.delete(consumerId);
+
+            // Clean up screen share state if it was a screen share
+            if (data.isScreenShare) {
+              setScreenShareStreams((prev) => {
+                const newSet = new Set(prev);
+                newSet.delete(data.userId);
+                console.log("🖥️ Removed screen share for user:", data.userId);
+                return newSet;
+              });
+
+              // Remove screen share stream
+              setRemoteStreams((prev) => {
+                const newMap = new Map(prev);
+                newMap.delete(`${data.userId}-screen`);
+                return newMap;
+              });
+            } else {
+              // Remove regular stream's track
+              setRemoteStreams((prev) => {
+                const newMap = new Map(prev);
+                const stream = newMap.get(data.userId);
+                if (stream) {
+                  // Remove the specific track from the stream
+                  const trackToRemove = stream
+                    .getTracks()
+                    .find((t) => t.id === data.consumer.track.id);
+                  if (trackToRemove) {
+                    stream.removeTrack(trackToRemove);
+                  }
+                  // If stream has no tracks left, remove it
+                  if (stream.getTracks().length === 0) {
+                    newMap.delete(data.userId);
+                  }
+                }
+                return newMap;
+              });
+            }
+
+            break;
+          }
+        }
+      }
+    );
+
     socketInstance.on(
       "kicked-from-room",
       ({ by, reason }: { by: string; reason: string }) => {
@@ -492,6 +577,7 @@ export const MediasoupProvider = ({
       socketInstance.off("disable-all-cameras");
       socketInstance.off("enable-all-cameras");
       socketInstance.off("kicked-from-room");
+      socketInstance.off("producer-closed");
       socketInstance.off("new-producer");
     };
   }, []);
@@ -801,12 +887,15 @@ export const MediasoupProvider = ({
       producerId: data.producerId,
       kind: data.kind,
       rtpParameters: data.rtpParameters,
+      appData: data.appData || {}, // Include appData from server
     });
 
     console.log("📦 Consumer created:", {
       id: consumer.id,
       kind: consumer.kind,
       producerId: consumer.producerId,
+      appData: consumer.appData,
+      isScreenShare: consumer.appData?.share || data.appData?.share,
     });
 
     socket.emit("resume-consumer", { roomId, consumerId: consumer.id });
@@ -840,12 +929,87 @@ export const MediasoupProvider = ({
       userId,
       "(track id:",
       track.id,
-      ")"
+      "), isScreenShare:",
+      data.isScreenShare || false
     );
+
+    const isScreenShare = data.isScreenShare || false;
+
+    // Store consumer in tracking map
+    consumersRef.current.set(consumer.id, {
+      consumer,
+      userId,
+      isScreenShare,
+    });
+
+    // Listen for transport close on this consumer (mediasoup-client valid event)
+    consumer.on("transportclose", () => {
+      console.log(
+        "🔴 Transport closed (consumer event):",
+        consumer.id,
+        "producerId:",
+        consumer.producerId
+      );
+
+      // Stop the track
+      consumer.track.stop();
+
+      // Remove from consumer map
+      consumersRef.current.delete(consumer.id);
+
+      // Clean up screen share state if it was a screen share
+      if (isScreenShare) {
+        setScreenShareStreams((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(userId);
+          console.log("🖥️ Removed screen share for user:", userId);
+          return newSet;
+        });
+
+        // Remove screen share stream
+        setRemoteStreams((prev) => {
+          const newMap = new Map(prev);
+          newMap.delete(`${userId}-screen`);
+          return newMap;
+        });
+      } else {
+        // Remove regular stream's track
+        setRemoteStreams((prev) => {
+          const newMap = new Map(prev);
+          const stream = newMap.get(userId);
+          if (stream) {
+            // Remove the specific track from the stream
+            const trackToRemove = stream
+              .getTracks()
+              .find((t) => t.id === consumer.track.id);
+            if (trackToRemove) {
+              stream.removeTrack(trackToRemove);
+            }
+            // If stream has no tracks left, remove it
+            if (stream.getTracks().length === 0) {
+              newMap.delete(userId);
+            }
+          }
+          return newMap;
+        });
+      }
+    });
+
+    // Use different key for screen share vs regular video
+    const streamKey = isScreenShare ? `${userId}-screen` : userId;
+
+    // Track screen share participants
+    if (isScreenShare) {
+      setScreenShareStreams((prev) => {
+        const newSet = new Set(prev);
+        newSet.add(userId);
+        return newSet;
+      });
+    }
 
     setRemoteStreams((prev) => {
       const newMap = new Map(prev);
-      const existingStream = newMap.get(userId) || new MediaStream();
+      const existingStream = newMap.get(streamKey) || new MediaStream();
 
       // Check if track already exists to avoid duplicates
       const existingTrack = existingStream
@@ -854,14 +1018,23 @@ export const MediasoupProvider = ({
       if (!existingTrack) {
         existingStream.addTrack(track);
         console.log(
-          `✅ Added ${data.kind} track to stream for userId:`,
-          userId
+          `✅ Added ${data.kind} track to ${
+            data.isScreenShare ? "SCREEN SHARE" : "regular"
+          } stream for userId:`,
+          userId,
+          "streamKey:",
+          streamKey
         );
       } else {
-        console.log(`⚠️ Track already exists in stream for userId:`, userId);
+        console.log(
+          `⚠️ Track already exists in stream for userId:`,
+          userId,
+          "streamKey:",
+          streamKey
+        );
       }
 
-      newMap.set(userId, existingStream);
+      newMap.set(streamKey, existingStream);
       return newMap;
     });
   };
@@ -1148,6 +1321,13 @@ export const MediasoupProvider = ({
   const enableScreenShare = async () => {
     if (!sendTransportRef.current || screenProducerRef.current) return;
 
+    // Check if someone else is already sharing
+    if (screenShareStreams.size > 0) {
+      toast.error("Someone is already sharing their screen");
+      console.log("⚠️ Cannot share: another user is already sharing");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -1168,8 +1348,24 @@ export const MediasoupProvider = ({
       });
       screenProducerRef.current = producer;
 
+      // Store local screen share stream
+      setLocalScreenStream(stream);
       setIsScreenSharing(true);
-      console.log("🖥️ Screen share producer created");
+      console.log("🖥️ Screen share producer created:", {
+        id: producer.id,
+        kind: producer.kind,
+        appData: producer.appData,
+      });
+
+      // Notify server that screen share is active
+      if (socket && currentRoomIdRef.current && currentUserIdRef.current) {
+        socket.emit("screen-share-started", {
+          roomId: currentRoomIdRef.current,
+          userId: currentUserIdRef.current,
+          producerId: producer.id,
+        });
+        console.log("🖥️ Notified server of screen share start");
+      }
     } catch (error) {
       console.error("❌ Failed to enable screen share:", error);
     }
@@ -1177,13 +1373,28 @@ export const MediasoupProvider = ({
 
   const disableScreenShare = () => {
     if (screenProducerRef.current) {
+      const producerId = screenProducerRef.current.id;
       const track = screenProducerRef.current.track;
       track?.stop();
       screenProducerRef.current.close();
       screenProducerRef.current = null;
 
+      // Clear local screen share stream and state
+      setLocalScreenStream(null);
       setIsScreenSharing(false);
-      console.log("🖥️ Screen share disabled");
+
+      console.log("🖥️ Screen share disabled, producer closed:", producerId);
+
+      // Notify server that screen share stopped
+      // Server will broadcast producer-closed to all participants
+      if (socket && currentRoomIdRef.current && currentUserIdRef.current) {
+        socket.emit("screen-share-stopped", {
+          roomId: currentRoomIdRef.current,
+          userId: currentUserIdRef.current,
+          producerId,
+        });
+        console.log("🖥️ Notified server of screen share stop");
+      }
     }
   };
 
@@ -1223,7 +1434,9 @@ export const MediasoupProvider = ({
         device,
         participants,
         remoteStreams,
+        screenShareStreams,
         localStream,
+        localScreenStream,
         isInitialized,
         muteAudio,
         unmuteAudio,
