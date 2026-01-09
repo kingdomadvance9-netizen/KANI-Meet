@@ -122,7 +122,7 @@ const MediasoupTile = ({
 
   return (
     <div
-      className={`relative aspect-video bg-[#1C1F2E] rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
+      className={`relative aspect-video bg-[#1C1F2E] rounded-xl sm:rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
         isTalking
           ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
           : "border-white/5"
@@ -146,7 +146,7 @@ const MediasoupTile = ({
 
       {/* AUDIO AVATAR (Shows if hasVideo is false) */}
       {!hasVideo && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 sm:gap-4 -mt-4 sm:-mt-0">
           <div className="relative">
             {isTalking && (
               <div className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-20" />
@@ -155,37 +155,39 @@ const MediasoupTile = ({
               <img
                 src={participantImage}
                 alt={participantName}
-                className="w-20 h-20 rounded-full object-cover border border-white/10 relative z-10"
+                className="w-8 h-8 sm:w-20 sm:h-20 rounded-full object-cover border border-white/10 relative z-10"
               />
             ) : (
-              <div className="w-20 h-20 rounded-full bg-dark-3 flex items-center justify-center text-2xl font-bold border border-white/10 relative z-10">
+              <div className="w-8 h-8 sm:w-20 sm:h-20 rounded-full bg-dark-3 flex items-center justify-center text-sm sm:text-2xl font-bold border border-white/10 relative z-10">
                 {participantName.charAt(0).toUpperCase()}
               </div>
             )}
           </div>
-          <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">
+          <p className="text-gray-500 text-[8px] sm:text-xs font-medium uppercase tracking-widest">
             Audio Only
           </p>
         </div>
       )}
 
       {/* BOTTOM INFO BAR */}
-      <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
-        <div className="bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10 flex items-center gap-2">
+      <div className="absolute bottom-1.5 sm:bottom-3 left-1.5 sm:left-3 right-1.5 sm:right-3 flex justify-between items-center">
+        <div className="bg-black/60 backdrop-blur-md px-1.5 sm:px-3 py-0.5 sm:py-1 rounded-md sm:rounded-lg border border-white/10 flex items-center gap-1 sm:gap-2">
           {isTalking ? (
-            <Mic size={14} className="text-blue-400" />
+            <Mic size={10} className="text-blue-400 sm:w-3.5 sm:h-3.5" />
           ) : (
-            <MicOff size={14} className="text-gray-400" />
+            <MicOff size={10} className="text-gray-400 sm:w-3.5 sm:h-3.5" />
           )}
-          <span className="text-xs font-medium">
+          <span className="text-[9px] sm:text-xs font-medium truncate">
             {participantName} {isLocal ? "(You)" : ""}
           </span>
-          {isHost && <span className="text-yellow-400 text-xs">👑</span>}
+          {isHost && (
+            <span className="text-yellow-400 text-[9px] sm:text-xs">👑</span>
+          )}
         </div>
 
         {!hasVideo && (
-          <div className="p-1.5 bg-red-500/20 rounded-md border border-red-500/50">
-            <VideoOff size={14} className="text-red-500" />
+          <div className="p-1 sm:p-1.5 bg-red-500/20 rounded border sm:rounded-md border-red-500/50">
+            <VideoOff size={10} className="text-red-500 sm:w-3.5 sm:h-3.5" />
           </div>
         )}
       </div>
