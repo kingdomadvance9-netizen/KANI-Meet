@@ -30,6 +30,7 @@ const CustomCallControls = () => {
     enableScreenShare,
     disableScreenShare,
     isScreenSharing,
+    isScreenShareGloballyEnabled,
     forceMuted,
     forceVideoPaused,
     globalVideoDisabled,
@@ -144,9 +145,14 @@ const CustomCallControls = () => {
       {/* SCREEN SHARE - Hidden on mobile, visible on tablet+ */}
       <button
         onClick={toggleScreenShare}
-        disabled={!isScreenSharing && screenShareStreams.size > 0}
+        disabled={
+          !isScreenShareGloballyEnabled ||
+          (!isScreenSharing && screenShareStreams.size > 0)
+        }
         title={
-          !isScreenSharing && screenShareStreams.size > 0
+          !isScreenShareGloballyEnabled
+            ? "Screen sharing disabled by host"
+            : !isScreenSharing && screenShareStreams.size > 0
             ? "Someone is already sharing"
             : isScreenSharing
             ? "Stop sharing screen"
@@ -156,7 +162,8 @@ const CustomCallControls = () => {
           "hidden sm:flex p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           isScreenSharing
             ? "bg-blue-500 text-white"
-            : !isScreenSharing && screenShareStreams.size > 0
+            : !isScreenShareGloballyEnabled ||
+              (!isScreenSharing && screenShareStreams.size > 0)
             ? "bg-dark-3/50 text-gray-500 cursor-not-allowed"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4"
         )}
@@ -239,16 +246,23 @@ const CustomCallControls = () => {
                   toggleScreenShare();
                   setIsMenuOpen(false);
                 }}
+                disabled={!isScreenShareGloballyEnabled}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3.5 transition-all touch-manipulation active:bg-dark-4",
                   isScreenSharing
                     ? "bg-blue-500/20 text-blue-400"
+                    : !isScreenShareGloballyEnabled
+                    ? "text-gray-500 cursor-not-allowed opacity-50"
                     : "text-gray-300 hover:bg-dark-3"
                 )}
               >
                 <MonitorUp className="w-5 h-5" />
                 <span className="text-sm font-medium">
-                  {isScreenSharing ? "Stop Sharing" : "Share Screen"}
+                  {!isScreenShareGloballyEnabled
+                    ? "Screen Sharing Disabled"
+                    : isScreenSharing
+                    ? "Stop Sharing"
+                    : "Share Screen"}
                 </span>
               </button>
 

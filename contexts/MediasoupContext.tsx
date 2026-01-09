@@ -35,6 +35,7 @@ type MediasoupContextType = {
   enableScreenShare: () => Promise<void>;
   disableScreenShare: () => void;
   isScreenSharing: boolean;
+  isScreenShareGloballyEnabled: boolean;
   isHost: boolean;
   forceMuted: boolean;
   forceVideoPaused: boolean;
@@ -99,6 +100,8 @@ export const MediasoupProvider = ({
     initialState.isVideoEnabled
   );
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isScreenShareGloballyEnabled, setIsScreenShareGloballyEnabled] =
+    useState(true);
   const [isHost, setIsHost] = useState(false);
   const [forceMuted, setForceMuted] = useState(false);
   const [forceVideoPaused, setForceVideoPaused] = useState(false);
@@ -536,6 +539,87 @@ export const MediasoupProvider = ({
         }
       }
     });
+
+    // Listen for global screen share permission updates
+    socketInstance.on(
+      "screenshare-global-update",
+      ({ enabled, by }: { enabled: boolean; by?: string }) => {
+        console.log(
+          `🖥️ SCREENSHARE-GLOBAL-UPDATE: ${
+            enabled ? "enabled" : "disabled"
+          } by ${by || "admin"}`
+        );
+        setIsScreenShareGloballyEnabled(enabled);
+
+        // If disabled globally, stop any active screen share
+        if (!enabled && screenProducerRef.current) {
+          console.log("🖥️ Auto-stopping screen share due to global disable");
+
+          // Inline cleanup to avoid calling disableScreenShare before declaration
+          const producerId = screenProducerRef.current.id;
+          const track = screenProducerRef.current.track;
+          track?.stop();
+          screenProducerRef.current.close();
+          screenProducerRef.current = null;
+
+          setLocalScreenStream(null);
+          setIsScreenSharing(false);
+
+          console.log("🖥️ Screen share disabled, producer closed:", producerId);
+
+          // Notify server
+          if (
+            socketInstance &&
+            currentRoomIdRef.current &&
+            currentUserIdRef.current
+          ) {
+            socketInstance.emit("screen-share-stopped", {
+              roomId: currentRoomIdRef.current,
+              userId: currentUserIdRef.current,
+              producerId: producerId,
+            });
+          }
+
+          toast.warning(
+            `Screen sharing has been disabled by ${by || "the host"}`
+          );
+        }
+
+        // Show toast notification
+        if (enabled) {
+          toast.success(
+            `Screen sharing has been enabled by ${by || "the host"}`
+          );
+        } else if (!screenProducerRef.current) {
+          // Only show info if user wasn't actively sharing
+          toast.info(`Screen sharing has been disabled by ${by || "the host"}`);
+        }
+      }
+    );
+
+    // Listen for screen share denied (when user tries but not allowed)
+    socketInstance.on(
+      "screenshare-denied",
+      ({ reason }: { reason?: string }) => {
+        console.log(
+          "🖥️ SCREENSHARE-DENIED:",
+          reason || "Screen sharing not allowed"
+        );
+        setIsScreenSharing(false);
+        toast.error(
+          reason || "Screen sharing is currently disabled by the host"
+        );
+
+        // Clean up any local screen share state
+        if (screenProducerRef.current) {
+          const track = screenProducerRef.current.track;
+          track?.stop();
+          screenProducerRef.current.close();
+          screenProducerRef.current = null;
+          setLocalScreenStream(null);
+        }
+      }
+    );
 
     // Listen for producer-closed events (standard mediasoup event)
     socketInstance.on(
@@ -1442,6 +1526,13 @@ export const MediasoupProvider = ({
   const enableScreenShare = async () => {
     if (!sendTransportRef.current || screenProducerRef.current) return;
 
+    // Check if screen sharing is globally disabled
+    if (!isScreenShareGloballyEnabled) {
+      toast.error("Screen sharing is disabled by the host");
+      console.log("⚠️ Cannot share: globally disabled by host");
+      return;
+    }
+
     // Check if someone else is already sharing
     if (screenShareStreams.size > 0) {
       toast.error("Someone is already sharing their screen");
@@ -1570,6 +1661,7 @@ export const MediasoupProvider = ({
         enableScreenShare,
         disableScreenShare,
         isScreenSharing,
+        isScreenShareGloballyEnabled,
         isHost,
         forceMuted,
         forceVideoPaused,
