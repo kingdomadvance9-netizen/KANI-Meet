@@ -58,8 +58,20 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
   // ✅ ACTION: Mute/Disable for Everyone
   const updateAll = async (type: MediaPermission, grant: boolean) => {
     try {
-      // PHASE 6: socket.emit('request-bulk-action', { type, grant })
-      toast.success(`${grant ? "Enabled" : "Disabled"} ${type} for everyone`);
+      if (!socket) {
+        toast.error("Not connected to server");
+        return;
+      }
+
+      socket.emit("host-bulk-action", { type, grant });
+
+      const actionText =
+        type === "screenshare"
+          ? "screen shares"
+          : type === "audio"
+          ? "mics"
+          : "cameras";
+      toast.success(`${grant ? "Enabled" : "Stopped"} all ${actionText}`);
     } catch (error) {
       toast.error("Failed to update participants");
     }
@@ -72,9 +84,25 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
     currentState: boolean
   ) => {
     try {
-      // PHASE 6: socket.emit('request-mute-user', { userId, type })
+      if (!socket) {
+        toast.error("Not connected to server");
+        return;
+      }
+
+      socket.emit("host-control-participant", {
+        userId,
+        type,
+        disable: currentState,
+      });
+
+      const actionText =
+        type === "screenshare"
+          ? "screen share"
+          : type === "audio"
+          ? "microphone"
+          : "camera";
       toast.success(
-        `${currentState ? "Disabled" : "Enabled"} ${type} for participant`
+        `${currentState ? "Disabled" : "Enabled"} ${actionText} for participant`
       );
     } catch (error) {
       toast.error(`Failed to update ${userId}`);
@@ -122,6 +150,15 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
               className="hover:bg-red-500/20 cursor-pointer"
             >
               <VideoOff className="w-4 h-4 mr-2" /> Disable All Cameras
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                updateAll("screenshare", false);
+              }}
+              className="hover:bg-red-500/20 cursor-pointer"
+            >
+              <ScreenShareOff className="w-4 h-4 mr-2" /> Stop All Screen Shares
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -201,6 +238,25 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
                     className="cursor-pointer hover:bg-red-500/20"
                   >
                     <MicOff className="w-4 h-4 mr-2" /> Mute Participant
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      togglePermission(p.id, "video", true);
+                    }}
+                    className="cursor-pointer hover:bg-red-500/20"
+                  >
+                    <VideoOff className="w-4 h-4 mr-2" /> Disable Camera
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      togglePermission(p.id, "screenshare", true);
+                    }}
+                    className="cursor-pointer hover:bg-red-500/20"
+                  >
+                    <ScreenShareOff className="w-4 h-4 mr-2" /> Stop Screen
+                    Share
                   </DropdownMenuItem>
                   <DropdownMenuItem className="text-red-400 cursor-pointer hover:bg-red-500/20">
                     <Shield className="w-4 h-4 mr-2" /> Remove from Call

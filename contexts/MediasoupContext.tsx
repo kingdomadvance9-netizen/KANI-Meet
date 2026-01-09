@@ -74,9 +74,30 @@ export const MediasoupProvider = ({
   const [localScreenStream, setLocalScreenStream] =
     useState<MediaStream | null>(null);
 
-  // Media States
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  // Media States - Initialize based on localStorage preference
+  const getInitialMediaState = () => {
+    try {
+      const storedPref = localStorage.getItem("meeting-join-preference");
+      if (storedPref) {
+        const preference = JSON.parse(storedPref);
+        return {
+          // If audio preference is false, mic is effectively "muted" (off)
+          isAudioMuted: !preference.audio,
+          isVideoEnabled: preference.video ?? false,
+        };
+      }
+    } catch (error) {
+      console.error("Failed to read initial media state:", error);
+    }
+    // Default: mic on (not muted), video off
+    return { isAudioMuted: false, isVideoEnabled: false };
+  };
+
+  const initialState = getInitialMediaState();
+  const [isAudioMuted, setIsAudioMuted] = useState(initialState.isAudioMuted);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(
+    initialState.isVideoEnabled
+  );
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [forceMuted, setForceMuted] = useState(false);
@@ -105,6 +126,20 @@ export const MediasoupProvider = ({
       }
     >
   >(new Map());
+
+  // Debug: Log media state changes
+  useEffect(() => {
+    console.log(`🎛️ Media State Update:`, {
+      isAudioMuted,
+      isVideoEnabled,
+      isScreenSharing,
+      hasAudioProducer: !!audioProducerRef.current,
+      hasVideoProducer: !!videoProducerRef.current,
+      hasScreenProducer: !!screenProducerRef.current,
+      audioProducerPaused: audioProducerRef.current?.paused ?? "N/A",
+      videoProducerPaused: videoProducerRef.current?.paused ?? "N/A",
+    });
+  }, [isAudioMuted, isVideoEnabled, isScreenSharing]);
 
   useEffect(() => {
     // Use the shared socket instance
@@ -466,6 +501,42 @@ export const MediasoupProvider = ({
       toast.success(`${by} allowed cameras to be enabled`);
     });
 
+    // Listen for host commands to stop screen share
+    socketInstance.on("host-stop-screenshare", ({ by }: { by: string }) => {
+      console.log(`🖥️ HOST-STOP-SCREENSHARE received from ${by}`);
+
+      // Stop local screen share if active
+      if (screenProducerRef.current) {
+        const producerId = screenProducerRef.current.id;
+        const track = screenProducerRef.current.track;
+        track?.stop();
+        screenProducerRef.current.close();
+        screenProducerRef.current = null;
+
+        setLocalScreenStream(null);
+        setIsScreenSharing(false);
+
+        console.log(
+          `🖥️ Screen share stopped by host ${by}, producer closed:`,
+          producerId
+        );
+        toast.warning(`${by} stopped your screen share`);
+
+        // Notify server
+        if (
+          socketInstance &&
+          currentRoomIdRef.current &&
+          currentUserIdRef.current
+        ) {
+          socketInstance.emit("screen-share-stopped", {
+            roomId: currentRoomIdRef.current,
+            userId: currentUserIdRef.current,
+            producerId: producerId,
+          });
+        }
+      }
+    });
+
     // Listen for producer-closed events (standard mediasoup event)
     socketInstance.on(
       "producer-closed",
@@ -742,8 +813,40 @@ export const MediasoupProvider = ({
 
       setIsInitialized(true);
 
-      // Step 8: Start producing audio immediately
-      await startAudio();
+      // Step 8: Check localStorage preference for initial media state
+      try {
+        const storedPref = localStorage.getItem("meeting-join-preference");
+        const preference = storedPref
+          ? JSON.parse(storedPref)
+          : { audio: true, video: false };
+
+        console.log("📋 Join preference from localStorage:", preference);
+
+        // Start audio/video based on user's saved preference
+        if (preference.audio) {
+          await startAudio();
+          // Audio producer created, set state to not muted
+          setIsAudioMuted(false);
+        } else {
+          console.log("🔇 Skipping audio - user preference is OFF");
+          // No audio producer, set state to muted (effectively off)
+          setIsAudioMuted(true);
+        }
+
+        if (preference.video) {
+          await enableVideo();
+          // Video producer created, state already set in enableVideo
+        } else {
+          console.log("📹 Skipping video - user preference is OFF");
+          // No video producer, ensure state is disabled
+          setIsVideoEnabled(false);
+        }
+      } catch (error) {
+        console.error("Failed to read localStorage preference:", error);
+        // Fallback: start audio only (previous behavior)
+        await startAudio();
+        setIsAudioMuted(false);
+      }
     } catch (error) {
       console.error("❌ Failed to join room:", error);
     }
@@ -1062,9 +1165,14 @@ export const MediasoupProvider = ({
         return newStream;
       });
 
-      console.log("🎤 Audio producer created");
+      // Set state: audio producer is active and not muted
+      setIsAudioMuted(false);
+
+      console.log("🎤 Audio producer created - state set to unmuted");
     } catch (error) {
       console.error("❌ Failed to start audio:", error);
+      // If failed to start, treat as muted
+      setIsAudioMuted(true);
     }
   };
 
@@ -1146,6 +1254,19 @@ export const MediasoupProvider = ({
   };
 
   const toggleAudio = async () => {
+    console.log(
+      `🎤 toggleAudio called. Current state: isAudioMuted=${isAudioMuted}, producer=${
+        audioProducerRef.current ? "exists" : "null"
+      }`
+    );
+
+    // Handle case where producer doesn't exist (joined with audio off)
+    if (!audioProducerRef.current) {
+      console.log("🎤 No audio producer - creating one");
+      await startAudio();
+      return;
+    }
+
     if (isAudioMuted) {
       await unmuteAudio();
     } else {
