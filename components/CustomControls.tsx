@@ -18,6 +18,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useMediasoupContext } from "@/contexts/MediasoupContext";
 import PaymentModal from "./PaymentModal";
+import ReactionButton from "./ReactionButton";
+import FloatingReactions from "./FloatingReactions";
+import ReactionOverlayLayer, {
+  ReactionOverlayLayerHandle,
+} from "./ReactionOverlayLayer";
 
 const CustomCallControls = () => {
   const router = useRouter();
@@ -41,10 +46,10 @@ const CustomCallControls = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
-  const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const portalMenuRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<ReactionOverlayLayerHandle | null>(null);
 
   // ✅ Admin Check (Could be enhanced later)
   const isAdmin = true;
@@ -92,7 +97,7 @@ const CustomCallControls = () => {
   }, [isMenuOpen]);
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 bg-dark-2/50 p-1.5 sm:p-2 rounded-xl sm:rounded-2xl backdrop-blur-md border border-white/10">
+    <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 bg-dark-2/50 p-1.5 sm:p-2 rounded-xl sm:rounded-2xl backdrop-blur-md border border-white/10 relative overflow-visible">
       {/* AUDIO BUTTON */}
       <button
         onClick={toggleAudio}
@@ -204,9 +209,6 @@ const CustomCallControls = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (!isMenuOpen && buttonRef.current) {
-              setButtonRect(buttonRef.current.getBoundingClientRect());
-            }
             setIsMenuOpen(!isMenuOpen);
           }}
           className={cn(
@@ -305,6 +307,40 @@ const CustomCallControls = () => {
           </div>,
           document.body
         )}
+
+      {/* Reaction Button */}
+      <ReactionButton
+        onReact={({ emoji, sessionId }) => {
+          console.log("[CustomControls] reaction requested", {
+            emoji,
+            sessionId,
+          });
+          // spawn local floating particle
+          window.dispatchEvent(
+            new CustomEvent("spawn-reaction", {
+              detail: { emoji, sessionId },
+            })
+          );
+
+          // show transient overlay for others
+          if (overlayRef.current) {
+            console.log("[CustomControls] calling overlayRef.showReaction", {
+              emoji,
+              sessionId,
+            });
+            overlayRef.current.showReaction({
+              emoji,
+              sessionId: sessionId ?? null,
+            });
+          } else {
+            console.warn("[CustomControls] overlayRef not ready");
+          }
+        }}
+      />
+
+      {/* Render floating particles + overlay layer */}
+      <FloatingReactions />
+      <ReactionOverlayLayer ref={overlayRef} />
 
       <div className="w-[1px] h-6 sm:h-8 bg-white/10 mx-0.5 sm:mx-1" />
 

@@ -35,15 +35,17 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
   const {
     participants,
     isHost: isLocalHost,
+    isCoHost: isLocalCoHost,
     makeHost,
     removeHost,
     makeCoHost,
     removeCoHost,
     socket,
+    screenShareStreams, // Track who is screen sharing
   } = useMediasoupContext();
 
-  // ✅ Only show if user is host
-  if (!isLocalHost) return null;
+  // ✅ Only show if user is host or co-host
+  if (!isLocalHost && !isLocalCoHost) return null;
 
   // ✅ Handle promoting to host
   const handleMakeHost = (participantId: string, participantName: string) => {
@@ -86,6 +88,27 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
     );
     removeCoHost(participantId);
     toast.info(`Removing co-host status from ${participantName}...`);
+  };
+
+  // ✅ Handle removing participant from call
+  const handleRemoveParticipant = (
+    participantId: string,
+    participantName: string
+  ) => {
+    if (!socket) {
+      toast.error("Not connected to server");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Are you sure you want to remove ${participantName} from the meeting?`
+    );
+    if (!confirmed) return;
+
+    socket.emit("remove-participant", {
+      participantId,
+    });
+    toast.info(`Removing ${participantName} from the meeting...`);
   };
 
   // ✅ ACTION: Mute/Disable for Everyone
@@ -225,105 +248,199 @@ const CustomHostControls = ({ onClose }: CustomHostControlsProps) => {
                   {p.name?.charAt(0).toUpperCase() || "U"}
                 </div>
               )}
-              <div className="flex flex-col min-w-0">
+              <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-sm truncate">{p.name || "User"}</span>
-                <span className="text-[10px] text-gray-500 flex items-center gap-1">
-                  {p.isHost && <span className="text-yellow-400">👑</span>}
-                  {p.isCoHost && !p.isHost && (
-                    <span className="text-blue-400">🤝</span>
-                  )}
-                  {p.isHost ? "Host" : p.isCoHost ? "Co-Host" : "Guest"}
-                  {p.id === socket?.id && " (You)"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    {p.isHost && <span className="text-yellow-400">👑</span>}
+                    {p.isCoHost && !p.isHost && (
+                      <span className="text-blue-400">🤝</span>
+                    )}
+                    {p.isHost ? "Host" : p.isCoHost ? "Co-Host" : "Guest"}
+                    {p.id === socket?.id && " (You)"}
+                  </span>
+                  {/* Media State Indicators */}
+                  <div className="flex items-center gap-1">
+                    {p.isAudioMuted ? (
+                      <MicOff className="w-3 h-3 text-red-400" />
+                    ) : (
+                      <Mic className="w-3 h-3 text-green-400" />
+                    )}
+                    {p.isVideoPaused ? (
+                      <VideoOff className="w-3 h-3 text-red-400" />
+                    ) : (
+                      <Video className="w-3 h-3 text-green-400" />
+                    )}
+                    {screenShareStreams.has(p.id) && (
+                      <ScreenShare className="w-3 h-3 text-blue-400" />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Don't show dropdown for yourself */}
+            {/* Don't show controls for yourself */}
             {p.id !== socket?.id && (
-              <DropdownMenu>
-                <DropdownMenuTrigger className="p-1 hover:bg-[#2A2C36] rounded">
-                  <MoreVertical className="w-4 h-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-[#1F212A] text-white border border-[#2C2E38]">
-                  {p.isHost ? (
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        handleRemoveHost(p.id, p.name);
-                      }}
-                      className="cursor-pointer hover:bg-orange-500/20"
-                    >
-                      <Crown className="w-4 h-4 mr-2" /> Remove Host Status
-                    </DropdownMenuItem>
+              <div className="flex items-center gap-1">
+                {/* Quick action buttons */}
+                <button
+                  onClick={() =>
+                    togglePermission(p.id, "audio", !p.isAudioMuted)
+                  }
+                  className={`p-1.5 rounded hover:bg-[#2A2C36] transition ${
+                    p.isAudioMuted ? "text-red-400" : "text-gray-400"
+                  }`}
+                  title={p.isAudioMuted ? "Unmute" : "Mute"}
+                >
+                  {p.isAudioMuted ? (
+                    <MicOff className="w-4 h-4" />
                   ) : (
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        handleMakeHost(p.id, p.name);
-                      }}
-                      className="cursor-pointer hover:bg-blue-500/20"
-                    >
-                      <Crown className="w-4 h-4 mr-2" /> Make Host
-                    </DropdownMenuItem>
+                    <Mic className="w-4 h-4" />
                   )}
-
-                  {/* Co-Host Options */}
-                  {!p.isHost &&
-                    (p.isCoHost ? (
+                </button>
+                <button
+                  onClick={() =>
+                    togglePermission(p.id, "video", !p.isVideoPaused)
+                  }
+                  className={`p-1.5 rounded hover:bg-[#2A2C36] transition ${
+                    p.isVideoPaused ? "text-red-400" : "text-gray-400"
+                  }`}
+                  title={p.isVideoPaused ? "Enable Camera" : "Disable Camera"}
+                >
+                  {p.isVideoPaused ? (
+                    <VideoOff className="w-4 h-4" />
+                  ) : (
+                    <Video className="w-4 h-4" />
+                  )}
+                </button>
+                {screenShareStreams.has(p.id) && (
+                  <button
+                    onClick={() => togglePermission(p.id, "screenshare", true)}
+                    className="p-1.5 rounded hover:bg-[#2A2C36] transition text-blue-400"
+                    title="Stop Screen Share"
+                  >
+                    <ScreenShareOff className="w-4 h-4" />
+                  </button>
+                )}
+                {/* More options dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="p-1 hover:bg-[#2A2C36] rounded">
+                    <MoreVertical className="w-4 h-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-[#1F212A] text-white border border-[#2C2E38]">
+                    {p.isHost ? (
                       <DropdownMenuItem
                         onSelect={(e) => {
                           e.preventDefault();
-                          handleRemoveCoHost(p.id, p.name);
+                          handleRemoveHost(p.id, p.name);
                         }}
                         className="cursor-pointer hover:bg-orange-500/20"
                       >
-                        <Shield className="w-4 h-4 mr-2" /> Remove Co-Host
+                        <Crown className="w-4 h-4 mr-2" /> Remove Host Status
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
                         onSelect={(e) => {
                           e.preventDefault();
-                          handleMakeCoHost(p.id, p.name);
+                          handleMakeHost(p.id, p.name);
                         }}
                         className="cursor-pointer hover:bg-blue-500/20"
                       >
-                        <Shield className="w-4 h-4 mr-2" /> Make Co-Host
+                        <Crown className="w-4 h-4 mr-2" /> Make Host
                       </DropdownMenuItem>
-                    ))}
+                    )}
 
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      togglePermission(p.id, "audio", true);
-                    }}
-                    className="cursor-pointer hover:bg-red-500/20"
-                  >
-                    <MicOff className="w-4 h-4 mr-2" /> Mute Participant
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      togglePermission(p.id, "video", true);
-                    }}
-                    className="cursor-pointer hover:bg-red-500/20"
-                  >
-                    <VideoOff className="w-4 h-4 mr-2" /> Disable Camera
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      togglePermission(p.id, "screenshare", true);
-                    }}
-                    className="cursor-pointer hover:bg-red-500/20"
-                  >
-                    <ScreenShareOff className="w-4 h-4 mr-2" /> Stop Screen
-                    Share
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-red-400 cursor-pointer hover:bg-red-500/20">
-                    <Shield className="w-4 h-4 mr-2" /> Remove from Call
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    {/* Co-Host Options */}
+                    {!p.isHost &&
+                      (p.isCoHost ? (
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleRemoveCoHost(p.id, p.name);
+                          }}
+                          className="cursor-pointer hover:bg-orange-500/20"
+                        >
+                          <Shield className="w-4 h-4 mr-2" /> Remove Co-Host
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleMakeCoHost(p.id, p.name);
+                          }}
+                          className="cursor-pointer hover:bg-blue-500/20"
+                        >
+                          <Shield className="w-4 h-4 mr-2" /> Make Co-Host
+                        </DropdownMenuItem>
+                      ))}
+
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        togglePermission(p.id, "audio", !p.isAudioMuted);
+                      }}
+                      className={`cursor-pointer ${
+                        p.isAudioMuted
+                          ? "hover:bg-green-500/20"
+                          : "hover:bg-red-500/20"
+                      }`}
+                    >
+                      {p.isAudioMuted ? (
+                        <>
+                          <Mic className="w-4 h-4 mr-2" /> Unmute Participant
+                        </>
+                      ) : (
+                        <>
+                          <MicOff className="w-4 h-4 mr-2" /> Mute Participant
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        togglePermission(p.id, "video", !p.isVideoPaused);
+                      }}
+                      className={`cursor-pointer ${
+                        p.isVideoPaused
+                          ? "hover:bg-green-500/20"
+                          : "hover:bg-red-500/20"
+                      }`}
+                    >
+                      {p.isVideoPaused ? (
+                        <>
+                          <Video className="w-4 h-4 mr-2" /> Enable Camera
+                        </>
+                      ) : (
+                        <>
+                          <VideoOff className="w-4 h-4 mr-2" /> Disable Camera
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    {/* Only show screen share control if participant is actively sharing */}
+                    {screenShareStreams.has(p.id) && (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          togglePermission(p.id, "screenshare", true);
+                        }}
+                        className="cursor-pointer hover:bg-red-500/20"
+                      >
+                        <ScreenShareOff className="w-4 h-4 mr-2" /> Stop Screen
+                        Share
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        handleRemoveParticipant(p.id, p.name);
+                      }}
+                      className="text-red-400 cursor-pointer hover:bg-red-500/20"
+                    >
+                      <Shield className="w-4 h-4 mr-2" /> Remove from Call
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
         ))}

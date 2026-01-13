@@ -4,70 +4,81 @@ import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import twemoji from "twemoji";
 
-// ---------------- UTILITIES ----------------
-
-type Reaction = {
-  id: string;
-  emoji: string;
-  sessionId: string;
-};
+type Reaction = { id: string; emoji: string; sessionId?: string | null };
 
 const EMOJI_COLORS: Record<string, string> = {
-  "❤️": "rgba(255, 60, 100, 0.7)",
-  "🔥": "rgba(255, 130, 30, 0.7)",
-  "😂": "rgba(255, 220, 0, 0.7)",
-  "👏": "rgba(100, 200, 255, 0.7)",
+  "❤️": "rgba(255, 60, 100, 0.8)",
+  "🔥": "rgba(255, 130, 30, 0.8)",
+  "😂": "rgba(255, 220, 0, 0.85)",
+  "👏": "rgba(100, 200, 255, 0.8)",
 };
 
 function emojiToSvg(e: string): string {
   const html = twemoji.parse(e, { folder: "svg", ext: ".svg" });
-  return html.match(/src="([^"]+)"/)?.[1] ?? "";
+  const m = html.match(/src="([^\"]+)"/);
+  return m ? m[1] : "";
 }
 
 function pickColor(emoji: string) {
-  return (
-    EMOJI_COLORS[emoji] ??
-    "rgba(255,255,255,0.55)" // default white glow
-  );
+  return EMOJI_COLORS[emoji] ?? "rgba(255,255,255,0.55)";
 }
 
-function randomRange(min: number, max: number) {
-  return min + Math.random() * (max - min);
+function waitForElement(sessionId?: string | null, tries = 10) {
+  return new Promise<HTMLElement | null>((resolve) => {
+    if (!sessionId) return resolve(null);
+    let i = 0;
+    const t = setInterval(() => {
+      const el = document.querySelector(
+        `[data-session-id="${sessionId}"]`
+      ) as HTMLElement | null;
+      if (el) {
+        clearInterval(t);
+        resolve(el);
+      }
+      i++;
+      if (i > tries) {
+        clearInterval(t);
+        resolve(null);
+      }
+    }, 60);
+  });
 }
-
-// 🔍 NEW: Wait for participant tile to exist (fixes global targeting)
-async function waitForElement(sessionId: string, tries = 14) {
-  for (let i = 0; i < tries; i++) {
-    const el = document.querySelector(
-      `[data-session-id="${sessionId}"]`
-    ) as HTMLElement | null;
-
-    if (el) return el;
-
-    await new Promise((res) => setTimeout(res, 70)); // wait 70ms
-  }
-  return null;
-}
-
-// ---------------- ROOT COMPONENT ----------------
 
 export default function FloatingReactions() {
   const [list, setList] = useState<Reaction[]>([]);
 
   useEffect(() => {
-    type Detail = { emoji: string; sessionId: string };
-
+    type Detail = { emoji: string; sessionId?: string | null };
     const handler = (e: CustomEvent<Detail>) => {
-      setList((p) => [...p, { id: crypto.randomUUID(), ...e.detail }]);
+      console.log("[FloatingReactions] spawn-reaction received", e.detail);
+      setList((p) => {
+        const newList = [
+          ...p,
+          {
+            id: crypto.randomUUID(),
+            emoji: e.detail.emoji,
+            sessionId: e.detail.sessionId,
+          },
+        ];
+        console.log("[FloatingReactions] Updated list:", newList);
+        return newList;
+      });
     };
 
+    console.log("[FloatingReactions] Event listener attached");
     window.addEventListener("spawn-reaction", handler as EventListener);
-    return () =>
+    return () => {
+      console.log("[FloatingReactions] Event listener removed");
       window.removeEventListener("spawn-reaction", handler as EventListener);
+    };
   }, []);
 
-  const remove = (id: string) =>
+  const remove = (id: string) => {
+    console.log("[FloatingReactions] Removing reaction:", id);
     setList((p) => p.filter((r) => r.id !== id));
+  };
+
+  console.log("[FloatingReactions] Rendering with list:", list);
 
   return (
     <AnimatePresence initial={false}>
@@ -78,8 +89,6 @@ export default function FloatingReactions() {
   );
 }
 
-// ---------------- PARTICLE ----------------
-
 function ReactionParticle({
   emoji,
   sessionId,
@@ -89,15 +98,8 @@ function ReactionParticle({
   const glow = pickColor(emoji);
 
   const controls = useAnimation();
-  const trailControls = useAnimation();
-  const shockControls = useAnimation();
-
-  const startX = window.innerWidth / 2 + randomRange(-120, 120);
+  const startX = window.innerWidth / 2 + (Math.random() - 0.5) * 140;
   const startY = window.innerHeight - 120;
-
-  const swirlFactor = randomRange(-180, 180);
-  const wobbleIntensity = randomRange(6, 14);
-  const curveOffset = randomRange(-120, 120);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,100 +107,55 @@ function ReactionParticle({
     async function run() {
       if (cancelled) return;
 
-      // ---------------- 1) Spawn Swirl ----------------
       await controls.start({
         opacity: 1,
-        scale: 1.4,
-        rotateZ: swirlFactor,
-        x: startX + randomRange(-40, 40),
-        y: startY - 60,
-        transition: {
-          duration: 0.4,
-          ease: [0.3, 1.3, 0.5, 1],
-        },
+        scale: 1.15,
+        x: startX,
+        y: startY - 36,
+        transition: { duration: 0.38 },
       });
 
-      // ---------------- Trail ----------------
-      trailControls.start({
-        opacity: [0.4, 0.1, 0.25],
-        scale: [0.6, 1.8, 0.8],
-        transition: {
-          repeat: Infinity,
-          duration: 0.9,
-        },
-      });
-
-      // ---------------- 2) Float Up ----------------
+      // float up
       await controls.start({
-        x: startX + curveOffset,
-        y: window.innerHeight - randomRange(450, 520),
-        rotateZ: swirlFactor * 0.5,
-        rotateX: wobbleIntensity,
-        rotateY: -wobbleIntensity,
-        transition: {
-          duration: 1.4,
-          ease: [0.22, 1, 0.36, 1],
-        },
+        x: startX + (Math.random() - 0.5) * 80,
+        y: window.innerHeight - (300 + Math.random() * 200),
+        rotate: (Math.random() - 0.5) * 20,
+        transition: { duration: 1.1, ease: [0.22, 1, 0.36, 1] },
       });
 
-      // ---------------- 3) Try Target Participant ----------------
-      const el = await waitForElement(sessionId); // 🔥 GLOBAL FIX
-
+      // try to find target tile
+      const el = await waitForElement(sessionId);
       if (el) {
         const rect = el.getBoundingClientRect();
         const targetX = rect.left + rect.width / 2;
         const targetY = rect.top + rect.height / 2 - 20;
-
-        // Move to target
         await controls.start({
           x: targetX,
           y: targetY,
-          scale: 1.6,
-          rotateX: 0,
-          rotateY: 0,
-          rotateZ: swirlFactor * 0.1,
-          transition: {
-            type: "spring",
-            stiffness: 90,
-            damping: 14,
-          },
+          scale: 1.5,
+          transition: { type: "spring", stiffness: 80, damping: 14 },
         });
-
-        // Shockwave
-        shockControls.start({
-          opacity: [0.4, 0],
-          scale: [1, 3],
-          transition: { duration: 0.6 },
-        });
-
-        // Burst
         await controls.start({
-          scale: [1.6, 2.1, 1.5],
+          scale: [1.5, 2.05, 1.45],
           transition: { duration: 0.45 },
         });
-
-        await new Promise((res) => setTimeout(res, 900));
+        await new Promise((r) => setTimeout(r, 700));
       } else {
-        // Fallback drifting
         await controls.start({
-          x: startX + randomRange(-60, 60),
-          y: window.innerHeight - randomRange(650, 720),
+          x: startX + (Math.random() - 0.5) * 120,
+          y: window.innerHeight - (600 + Math.random() * 160),
           opacity: 0.85,
-          rotateZ: swirlFactor * 0.7,
-          transition: { duration: 1.3, ease: "easeOut" },
+          transition: { duration: 1.1 },
         });
       }
 
       if (cancelled) return;
 
-      // ---------------- 4) Fade out ----------------
       await controls.start({
         opacity: 0,
         scale: 0.2,
-        rotateZ: swirlFactor * 3,
-        transition: { duration: 0.8, ease: "easeInOut" },
+        transition: { duration: 0.7 },
       });
-
       onDone();
     }
 
@@ -209,66 +166,26 @@ function ReactionParticle({
   }, [controls, sessionId, onDone]);
 
   return (
-    <>
-      {/* Shockwave */}
-      <motion.div
-        animate={shockControls}
-        initial={{ opacity: 0, scale: 0.2 }}
-        style={{
-          position: "fixed",
-          width: 80,
-          height: 80,
-          borderRadius: "50%",
-          background: glow,
-          filter: "blur(20px)",
-          pointerEvents: "none",
-          transform: "translate(-50%, -50%)",
-          zIndex: 9997,
-        }}
-      />
-
-      {/* Glow Trail */}
-      <motion.div
-        animate={trailControls}
-        initial={{ opacity: 0 }}
-        style={{
-          position: "fixed",
-          width: 30,
-          height: 30,
-          borderRadius: "50%",
-          background: glow,
-          filter: "blur(25px)",
-          pointerEvents: "none",
-          transform: "translate(-50%, -50%)",
-          zIndex: 9998,
-        }}
-      />
-
-      {/* Main Emoji */}
-      <motion.img
-        src={svg}
-        animate={controls}
-        initial={{ opacity: 0, scale: 0.3, x: startX, y: startY }}
-        exit={{ opacity: 0 }}
-        style={{
-          position: "fixed",
-          width: 54,
-          height: 54,
-          transform: "translate(-50%, -50%)",
-          pointerEvents: "none",
-          zIndex: 9999,
-          filter: `drop-shadow(0 0 12px ${glow})`,
-        }}
-      />
-    </>
+    <motion.img
+      src={svg}
+      animate={controls}
+      initial={{ opacity: 0, scale: 0.25, x: startX, y: startY }}
+      exit={{ opacity: 0 }}
+      style={{
+        position: "fixed",
+        width: 52,
+        height: 52,
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "none",
+        zIndex: 9999,
+        filter: `drop-shadow(0 8px 18px ${glow})`,
+      }}
+    />
   );
 }
 
-
-
-
-
-{/*
+{
+  /*
 
   Lighter version
   
@@ -472,4 +389,5 @@ function ReactionParticle({
 }
 
   
-  */}
+  */
+}

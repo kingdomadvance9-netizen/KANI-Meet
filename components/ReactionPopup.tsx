@@ -1,5 +1,5 @@
 // components/ReactionPopup.tsx
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
 type Props = {
@@ -17,34 +17,64 @@ const ReactionPopup: React.FC<Props> = ({
   onClose,
   anchorClassName,
 }) => {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const btnsRef = useRef<(HTMLButtonElement | null)[]>([]);
+
+  useEffect(() => {
+    // focus first button when mounted
+    btnsRef.current[0]?.focus();
+  }, []);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const idx = btnsRef.current.findIndex((b) => b === document.activeElement);
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      const next = (idx + 1) % btnsRef.current.length;
+      btnsRef.current[next]?.focus();
+    }
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      const next = (idx - 1 + btnsRef.current.length) % btnsRef.current.length;
+      btnsRef.current[next]?.focus();
+    }
+    if (e.key === "Escape") {
+      onClose?.();
+    }
+  };
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+      initial={{ opacity: 0, y: 10, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 10, scale: 0.96 }}
-      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-      className={`
-    rounded-2xl px-3 py-2 
-    backdrop-blur-sm bg-[rgba(30,30,30,0.9)]
-    shadow-xl 
-    flex flex-wrap gap-2        /* <-- wrap icons safely */
-    max-w-full                  /* <-- prevent overflow */
-    ${anchorClassName || ""}
-  `}
+      exit={{ opacity: 0, y: 10, scale: 0.92 }}
+      transition={{ type: "spring", stiffness: 400, damping: 28 }}
+      className={`rounded-xl sm:rounded-2xl px-2 sm:px-3 py-2 sm:py-2.5 backdrop-blur-md bg-dark-2/95 border border-white/10 shadow-2xl flex flex-wrap gap-1.5 sm:gap-2 max-w-full ${
+        anchorClassName || ""
+      }`}
       onClick={(e) => e.stopPropagation()}
       role="menu"
       aria-label="Reactions"
+      ref={gridRef}
+      onKeyDown={onKeyDown}
     >
-      {emojis.map((e) => (
+      {emojis.map((emoji, i) => (
         <button
-          key={e}
-          onClick={() => {
-            onSelect(e);
+          key={emoji}
+          ref={(el) => (btnsRef.current[i] = el)}
+          onClick={(e) => {
+            console.log("[ReactionPopup] Emoji clicked:", emoji);
+            e.stopPropagation();
+            onSelect(emoji);
             onClose?.();
           }}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-2xl"
+          onMouseDown={(e) => {
+            console.log("[ReactionPopup] Emoji mousedown:", emoji);
+          }}
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-dark-3/50 hover:bg-dark-3 flex items-center justify-center text-xl sm:text-2xl transition-all hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400/50 touch-manipulation"
+          aria-label={`React ${emoji}`}
+          role="menuitem"
         >
-          {e}
+          {emoji}
         </button>
       ))}
     </motion.div>
