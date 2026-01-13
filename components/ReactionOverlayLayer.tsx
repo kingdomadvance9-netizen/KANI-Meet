@@ -54,9 +54,10 @@ const ReactionOverlayLayer = forwardRef<
   useEffect(() => {
     const t = setInterval(() => {
       const now = Date.now();
-      const next = (s) => s.filter((it) => now - it.createdAt < lifetime + 400);
-      setItems((s) => {
-        const filtered = next(s as OverlayItem[]);
+      const next = (s: OverlayItem[]) =>
+        s.filter((it) => now - it.createdAt < lifetime + 400);
+      setItems((s: OverlayItem[]) => {
+        const filtered = next(s);
         if (filtered.length !== s.length) {
           try {
             console.log(

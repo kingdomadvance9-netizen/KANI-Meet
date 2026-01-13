@@ -60,7 +60,9 @@ const ReactionPopup: React.FC<Props> = ({
       {emojis.map((emoji, i) => (
         <button
           key={emoji}
-          ref={(el) => (btnsRef.current[i] = el)}
+          ref={(el) => {
+            btnsRef.current[i] = el;
+          }}
           onClick={(e) => {
             console.log("[ReactionPopup] Emoji clicked:", emoji);
             e.stopPropagation();
