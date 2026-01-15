@@ -14,6 +14,8 @@ interface Participant {
   isVideoPaused: boolean;
   isHost: boolean;
   isCoHost?: boolean;
+  audioLocked?: boolean;        // Cannot unmute when true
+  screenShareLocked?: boolean;  // Cannot screen share when true
 }
 
 type MediasoupContextType = {
@@ -438,10 +440,10 @@ export const MediasoupProvider = ({
     // ✅ Force control events from host
     socketInstance.on(
       "force-mute",
-      ({ audio, by }: { audio: boolean; by: string }) => {
+      ({ audio, by, locked }: { audio: boolean; by: string; locked?: boolean }) => {
         console.log(`====================================`);
         console.log(`🎤 FORCE-MUTE EVENT RECEIVED`);
-        console.log(`   audio=${audio}, by=${by}`);
+        console.log(`   audio=${audio}, by=${by}, locked=${locked}`);
         console.log(`   This should ONLY affect MICROPHONE`);
         console.log(`====================================`);
 
@@ -453,7 +455,7 @@ export const MediasoupProvider = ({
             audioProducerRef.current.close();
             audioProducerRef.current = null;
             setIsAudioMuted(true);
-            setForceMuted(true); // Lock mic until admin unmutes
+            setForceMuted(locked ?? true); // Lock mic based on backend state
 
             setLocalStream((prev) => {
               if (!prev) return null;
@@ -466,7 +468,7 @@ export const MediasoupProvider = ({
           setParticipants((prev) =>
             prev.map((p) =>
               p.id === (socketInstance as any)?.auth?.userId
-                ? { ...p, isAudioMuted: true }
+                ? { ...p, isAudioMuted: true, audioLocked: locked ?? true }
                 : p
             )
           );
@@ -475,16 +477,16 @@ export const MediasoupProvider = ({
           toast.info(`${by} muted you`);
         } else {
           // Unmute - unlock the button
-          setForceMuted(false);
+          setForceMuted(locked ?? false);
           console.log(`🔊 ${by} unlocked your microphone (audio=${audio})`);
           toast.success(`${by} allowed you to unmute`);
         }
       }
     );
 
-    socketInstance.on("allow-unmute", ({ by }: { by: string }) => {
+    socketInstance.on("allow-unmute", ({ by, locked }: { by: string; locked?: boolean }) => {
       // Remove the mute restriction flag
-      setForceMuted(false);
+      setForceMuted(locked ?? false);
       console.log(`🔊 ${by} allowed you to unmute`);
       toast.success(`${by} allowed you to unmute`);
     });
@@ -1336,6 +1338,17 @@ export const MediasoupProvider = ({
   const startAudio = async () => {
     if (!sendTransportRef.current || audioProducerRef.current) return;
 
+    // Check if audio is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.audioLocked) {
+      console.warn("🔇 Cannot start audio - audio locked by host");
+      toast.warning("You have been muted by the host");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioTrack = stream.getAudioTracks()[0];
@@ -1394,6 +1407,17 @@ export const MediasoupProvider = ({
   };
 
   const unmuteAudio = async () => {
+    // Check if audio is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.audioLocked) {
+      console.warn("🔇 Cannot unmute - audio locked by host");
+      toast.warning("You have been muted by the host");
+      return;
+    }
+
     // If producer exists and is paused, just resume it
     if (audioProducerRef.current && audioProducerRef.current.paused) {
       audioProducerRef.current.resume();
@@ -1631,6 +1655,17 @@ export const MediasoupProvider = ({
   // Screen Share Controls
   const enableScreenShare = async () => {
     if (!sendTransportRef.current || screenProducerRef.current) return;
+
+    // Check if screen sharing is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.screenShareLocked) {
+      toast.error("Screen sharing is disabled by the host");
+      console.warn("🚫 Cannot share screen - locked by host");
+      return;
+    }
 
     // Check if screen sharing is globally disabled
     if (!isScreenShareGloballyEnabled) {

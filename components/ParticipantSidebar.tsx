@@ -202,7 +202,7 @@ const ParticipantSidebar = ({
         )}
 
         {/* Individual Controls Toggle */}
-        {isHost && (
+        {hasHostPrivileges && (
           <button
             onClick={() => setShowHostControls(!showHostControls)}
             className={cn(
