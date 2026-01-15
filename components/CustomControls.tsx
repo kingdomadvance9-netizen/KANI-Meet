@@ -40,6 +40,7 @@ const CustomCallControls = () => {
     forceVideoPaused,
     globalVideoDisabled,
     screenShareStreams,
+    leaveRoom,
   } = useMediasoupContext();
 
   // Additional States
@@ -69,7 +70,9 @@ const CustomCallControls = () => {
   };
 
   const handleLeave = () => {
-    // Disconnect and navigate away
+    // Clean up all media and disconnect socket
+    leaveRoom();
+    // Navigate away after cleanup
     router.push("/");
   };
 

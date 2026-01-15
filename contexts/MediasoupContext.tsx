@@ -53,6 +53,7 @@ type MediasoupContextType = {
     userImageUrl?: string,
     isCreator?: boolean
   ) => Promise<void>;
+  leaveRoom: () => void;
 };
 
 const MediasoupContext = createContext<MediasoupContextType | null>(null);
@@ -122,6 +123,7 @@ export const MediasoupProvider = ({
   const currentUserIdRef = useRef<string | null>(null);
   const hasJoinedRef = useRef<boolean>(false);
   const peerIdToUserIdRef = useRef<Map<string, string>>(new Map());
+  const isInitialParticipantListRef = useRef<boolean>(true);
 
   // Consumer tracking map: consumerId -> { consumer, userId, isScreenShare }
   const consumersRef = useRef<
@@ -200,6 +202,18 @@ export const MediasoupProvider = ({
           if (newParticipantIds.length > 0) {
             console.log("🆕 New participants detected:", newParticipantIds);
 
+            // Show toast notification for each new participant (skip on initial load)
+            if (!isInitialParticipantListRef.current) {
+              newParticipantIds.forEach((newId) => {
+                const newParticipant = updatedList.find((p) => p.id === newId);
+                if (newParticipant) {
+                  toast.success(`${newParticipant.name} joined the meeting`, {
+                    duration: 3000,
+                  });
+                }
+              });
+            }
+
             // Check if we have any unmapped streams (keyed by socket IDs)
             setRemoteStreams((prevStreams) => {
               const newStreamsMap = new Map(prevStreams);
@@ -236,6 +250,9 @@ export const MediasoupProvider = ({
 
           return updatedList;
         });
+
+        // Mark that initial participant list has been loaded
+        isInitialParticipantListRef.current = false;
 
         // Also try to request socket-to-user mapping (if server supports it)
         updatedList.forEach((participant) => {
@@ -301,8 +318,17 @@ export const MediasoupProvider = ({
           return;
         }
 
-        // Remove from participants list
-        setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+        // Get participant name before removing
+        setParticipants((prev) => {
+          const leavingParticipant = prev.find((p) => p.id === participantId);
+          if (leavingParticipant) {
+            // Show toast notification
+            toast.info(`${leavingParticipant.name} left the meeting`, {
+              duration: 3000,
+            });
+          }
+          return prev.filter((p) => p.id !== participantId);
+        });
 
         // Clean up video/audio streams for this peer
         setRemoteStreams((prev) => {
@@ -1806,6 +1832,72 @@ export const MediasoupProvider = ({
     console.log("✅ remove-cohost event emitted");
   };
 
+  const leaveRoom = () => {
+    console.log("👋 Leaving room - cleaning up all media and connections");
+
+    try {
+      // Stop and close all local media tracks and producers
+      if (audioProducerRef.current) {
+        audioProducerRef.current.track?.stop();
+        audioProducerRef.current.close();
+        audioProducerRef.current = null;
+      }
+
+      if (videoProducerRef.current) {
+        videoProducerRef.current.track?.stop();
+        videoProducerRef.current.close();
+        videoProducerRef.current = null;
+      }
+
+      if (screenProducerRef.current) {
+        screenProducerRef.current.track?.stop();
+        screenProducerRef.current.close();
+        screenProducerRef.current = null;
+      }
+
+      // Stop all local stream tracks
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+        setLocalStream(null);
+      }
+
+      if (localScreenStream) {
+        localScreenStream.getTracks().forEach((track) => track.stop());
+        setLocalScreenStream(null);
+      }
+
+      // Close all consumers
+      consumersRef.current.forEach((consumer) => {
+        try {
+          consumer.close();
+        } catch (err) {
+          console.error("Error closing consumer:", err);
+        }
+      });
+      consumersRef.current.clear();
+
+      // Clear remote streams
+      setRemoteStreams(new Map());
+      setScreenShareStreams(new Set());
+
+      // Clear participants
+      setParticipants([]);
+
+      // Reset initial participant list flag for next join
+      isInitialParticipantListRef.current = true;
+
+      // Disconnect the socket - this will trigger the backend's 'disconnecting' event
+      if (socket) {
+        socket.disconnect();
+        console.log("🔌 Socket disconnected");
+      }
+
+      console.log("✅ Successfully cleaned up and left room");
+    } catch (err) {
+      console.error("Error during leaveRoom cleanup:", err);
+    }
+  };
+
   return (
     <MediasoupContext.Provider
       value={{
@@ -1839,6 +1931,7 @@ export const MediasoupProvider = ({
         makeCoHost,
         removeCoHost,
         joinRoom,
+        leaveRoom,
       }}
     >
       {children}
