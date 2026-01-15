@@ -24,8 +24,8 @@ const GridLayout = ({
   remoteStreams,
   localStream,
 }: GridLayoutProps) => {
-  // ✅ Extract socket, user info, screen share tracking, and local screen share from context
-  const { socket, screenShareStreams, localScreenStream, isScreenSharing } =
+  // ✅ Extract screen share tracking and local screen share from context
+  const { screenShareStreams, localScreenStream, isScreenSharing } =
     useMediasoupContext();
   const { user } = useUser();
 
@@ -40,6 +40,9 @@ const GridLayout = ({
   }, []);
 
   const isMobile = screenWidth < 1024;
+  const [localVideoEl, setLocalVideoEl] = useState<HTMLVideoElement | null>(
+    null
+  );
 
   // Get all screen share streams for prominent display (including local)
   const screenShares = Array.from(screenShareStreams)
@@ -98,7 +101,7 @@ const GridLayout = ({
             <div
               className={`
             grid w-full auto-rows-fr
-            ${isMobile ? "grid-cols-2 gap-2" : "grid-cols-1 gap-4"}
+            ${isMobile ? "grid-cols-2 gap-1" : "grid-cols-1 gap-4"}
           `}
             >
               {/* 1. LOCAL PREVIEW (YOU) */}
@@ -107,6 +110,7 @@ const GridLayout = ({
                 participantName={user?.fullName || user?.firstName || "You"}
                 participantImage={user?.imageUrl}
                 isLocal
+                onVideoElement={setLocalVideoEl}
               />
 
               {/* 2. REMOTE PARTICIPANTS (Camera streams) */}
@@ -204,7 +208,45 @@ const GridLayout = ({
       )}
 
       <div className="fixed top-4 right-4 z-50">
-        <button className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-600/90 hover:bg-blue-700 transition-all shadow-xl">
+        <button
+          onClick={async () => {
+            try {
+              if (!localVideoEl) return;
+              // If already in PiP, exit. Use feature-checks instead of any-casts where possible.
+              const pipElement = (
+                document as Document & { pictureInPictureElement?: Element }
+              ).pictureInPictureElement;
+              if (pipElement === localVideoEl) {
+                // Some browsers expose exitPictureInPicture on document
+                // Use a runtime check to call it when available
+                const exitPiP = (document as any).exitPictureInPicture;
+                if (typeof exitPiP === "function") {
+                  await exitPiP();
+                }
+                return;
+              }
+
+              // Request PiP on the video element if supported
+              const requestPiP = (
+                localVideoEl as HTMLVideoElement & {
+                  requestPictureInPicture?: () => Promise<PictureInPictureWindow | void>;
+                }
+              ).requestPictureInPicture;
+              if (typeof requestPiP === "function") {
+                await localVideoEl.play().catch(() => {});
+                await requestPiP.call(localVideoEl);
+              } else {
+                console.warn(
+                  "Picture-in-Picture not supported on this browser"
+                );
+              }
+            } catch (err) {
+              console.error("PiP error", err);
+            }
+          }}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-600/90 hover:bg-blue-700 transition-all shadow-xl"
+          title={localVideoEl ? "Toggle Picture-in-Picture" : "No local video"}
+        >
           <PictureInPicture2 className="text-white w-5 h-5" />
         </button>
       </div>
