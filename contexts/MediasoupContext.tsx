@@ -56,6 +56,7 @@ type MediasoupContextType = {
     isCreator?: boolean
   ) => Promise<void>;
   leaveRoom: () => void;
+  roomId: string | null;
 };
 
 const MediasoupContext = createContext<MediasoupContextType | null>(null);
@@ -114,6 +115,7 @@ export const MediasoupProvider = ({
   const [forceMuted, setForceMuted] = useState(false);
   const [forceVideoPaused, setForceVideoPaused] = useState(false);
   const [globalVideoDisabled, setGlobalVideoDisabled] = useState(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
 
   // Refs for Transports and Producers
   const sendTransportRef = useRef<types.Transport | null>(null);
@@ -436,6 +438,34 @@ export const MediasoupProvider = ({
       toast.info(`${by} removed your host status`);
       setIsHost(false);
     });
+
+    // ✅ Listen for video reactions from other participants
+    socketInstance.on(
+      "receive-video-reaction",
+      ({
+        emoji,
+        sessionId,
+        userId,
+        userName,
+      }: {
+        emoji: string;
+        sessionId: string | null;
+        userId: string;
+        userName: string;
+      }) => {
+        console.log(`🎉 Received video reaction from ${userName}:`, {
+          emoji,
+          sessionId,
+        });
+
+        // Spawn floating particle for remote reaction
+        window.dispatchEvent(
+          new CustomEvent("spawn-reaction", {
+            detail: { emoji, sessionId },
+          })
+        );
+      }
+    );
 
     // ✅ Force control events from host
     socketInstance.on(
@@ -887,6 +917,7 @@ export const MediasoupProvider = ({
       socketInstance.off("kicked-from-room");
       socketInstance.off("producer-closed");
       socketInstance.off("new-producer");
+      socketInstance.off("receive-video-reaction");
     };
   }, []);
 
@@ -912,6 +943,7 @@ export const MediasoupProvider = ({
     hasJoinedRef.current = true;
     currentRoomIdRef.current = roomId;
     currentUserIdRef.current = userId;
+    setRoomId(roomId);
     setIsHost(isCreator);
 
     // Map socket to Clerk user ID for persistent identification
@@ -2030,6 +2062,7 @@ export const MediasoupProvider = ({
         removeCoHost,
         joinRoom,
         leaveRoom,
+        roomId,
       }}
     >
       {children}

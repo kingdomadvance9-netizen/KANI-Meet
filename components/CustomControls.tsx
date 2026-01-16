@@ -20,9 +20,6 @@ import { useMediasoupContext } from "@/contexts/MediasoupContext";
 import PaymentModal from "./PaymentModal";
 import ReactionButton from "./ReactionButton";
 import FloatingReactions from "./FloatingReactions";
-import ReactionOverlayLayer, {
-  ReactionOverlayLayerHandle,
-} from "./ReactionOverlayLayer";
 
 const CustomCallControls = () => {
   const router = useRouter();
@@ -44,6 +41,8 @@ const CustomCallControls = () => {
     participants,
     isHost,
     isCoHost,
+    socket,
+    roomId,
   } = useMediasoupContext();
 
   // Get current participant's lock states
@@ -65,7 +64,6 @@ const CustomCallControls = () => {
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const portalMenuRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<ReactionOverlayLayerHandle | null>(null);
 
   // Handlers
   const toggleScreenShare = async () => {
@@ -329,32 +327,31 @@ const CustomCallControls = () => {
             emoji,
             sessionId,
           });
-          // spawn local floating particle
+
+          // Emit to server for synchronization across all participants
+          if (socket && roomId) {
+            socket.emit("video-reaction", {
+              roomId,
+              emoji,
+              sessionId: sessionId ?? null,
+              userId: user?.id,
+              userName: user?.fullName || user?.firstName || "User",
+            });
+          } else {
+            console.warn("[CustomControls] socket or roomId not available for broadcast");
+          }
+
+          // Spawn local floating particle for immediate feedback
           window.dispatchEvent(
             new CustomEvent("spawn-reaction", {
               detail: { emoji, sessionId },
             })
           );
-
-          // show transient overlay for others
-          if (overlayRef.current) {
-            console.log("[CustomControls] calling overlayRef.showReaction", {
-              emoji,
-              sessionId,
-            });
-            overlayRef.current.showReaction({
-              emoji,
-              sessionId: sessionId ?? null,
-            });
-          } else {
-            console.warn("[CustomControls] overlayRef not ready");
-          }
         }}
       />
 
-      {/* Render floating particles + overlay layer */}
+      {/* Render floating particles */}
       <FloatingReactions />
-      <ReactionOverlayLayer ref={overlayRef} />
 
       <div className="w-[1px] h-6 sm:h-8 bg-white/10 mx-0.5 sm:mx-1" />
 

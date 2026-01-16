@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import twemoji from "twemoji";
 
@@ -80,12 +81,27 @@ export default function FloatingReactions() {
 
   console.log("[FloatingReactions] Rendering with list:", list);
 
-  return (
-    <AnimatePresence initial={false}>
-      {list.map((r) => (
-        <ReactionParticle key={r.id} {...r} onDone={() => remove(r.id)} />
-      ))}
-    </AnimatePresence>
+  // Render nothing on server
+  if (typeof window === "undefined") return null;
+
+  // Portal to document.body to avoid affecting control bar layout
+  return createPortal(
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        overflow: "hidden",
+        pointerEvents: "none",
+        zIndex: 9998,
+      }}
+    >
+      <AnimatePresence initial={false}>
+        {list.map((r) => (
+          <ReactionParticle key={r.id} {...r} onDone={() => remove(r.id)} />
+        ))}
+      </AnimatePresence>
+    </div>,
+    document.body
   );
 }
 
