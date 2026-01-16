@@ -59,7 +59,6 @@ export const useSocketChat = (roomId?: string) => {
   );
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const joinedRef = useRef(false);
 
   // ----------------------------
   // CONNECT + LISTENERS
@@ -67,31 +66,38 @@ export const useSocketChat = (roomId?: string) => {
   useEffect(() => {
     if (!roomId || !user) return;
 
-    // ----------------------------
-    // CONNECT + JOIN ROOM (SAFE)
-    // ----------------------------
-    if (joinedRef.current) return;
-    joinedRef.current = true;
+    console.log("💬 Chat hook initializing for room:", roomId);
+    setConnected(socket.connected);
+    setSelfSocketId(socket.id || null);
 
-    const joinRoom = () => {
-      console.log("💬 Chat joining room:", roomId);
-      setConnected(true);
-      setSelfSocketId(socket.id!);
-      socket.emit("join-room", roomId);
+    // Request chat history explicitly (in case we missed the initial join-room emission)
+    const requestHistory = () => {
+      console.log("💬 Requesting chat history for room:", roomId);
+      socket.emit("request-chat-history", { roomId });
     };
 
-    // Socket should already be connected (autoConnect: true in getSocket)
-    // But handle both cases for safety
+    // Request history on mount and after socket connects
     if (socket.connected) {
-      joinRoom();
-    } else {
-      socket.once("connect", joinRoom);
+      requestHistory();
     }
+
+    const handleConnect = () => {
+      console.log("💬 Chat socket connected");
+      setConnected(true);
+      setSelfSocketId(socket.id || null);
+      requestHistory();
+    };
+
+    const handleDisconnect = () => {
+      console.log("💬 Chat socket disconnected");
+      setConnected(false);
+    };
 
     // ----------------------------
     // HANDLERS
     // ----------------------------
     const handleChatHistory = (history: ReceivedMessage[]) => {
+      console.log(`💬 Chat history received: ${history.length} messages`);
       setMessages(history);
 
       const pinned = history.find((m) => m.message.pinned);
@@ -197,9 +203,27 @@ export const useSocketChat = (roomId?: string) => {
       });
     };
 
+    const handleMessageError = ({
+      messageId,
+      error,
+    }: {
+      messageId: string;
+      error: string;
+    }) => {
+      console.error(`Failed to send message ${messageId}:`, error);
+
+      // Remove the optimistically added message
+      setMessages((prev) => prev.filter((m) => m.message.id !== messageId));
+
+      // Show error notification (you can add toast here if available)
+      alert(error);
+    };
+
     // ----------------------------
     // REGISTER LISTENERS
     // ----------------------------
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
     socket.on("chat-history", handleChatHistory);
     socket.on("receive-message", handleReceiveMessage);
     socket.on("typing-start", handleTypingStart);
@@ -208,13 +232,15 @@ export const useSocketChat = (roomId?: string) => {
     socket.on("message-react", handleMessageReaction);
     socket.on("message-react-update", handleReactionUpdate);
     socket.on("pin-message-update", handlePinUpdate);
+    socket.on("message-error", handleMessageError);
 
     // ----------------------------
     // CLEANUP
     // ----------------------------
     return () => {
-      joinedRef.current = false;
-      socket.off("connect", joinRoom);
+      console.log("💬 Chat hook cleanup for room:", roomId);
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
       socket.off("chat-history", handleChatHistory);
       socket.off("receive-message", handleReceiveMessage);
       socket.off("typing-start", handleTypingStart);
@@ -223,8 +249,9 @@ export const useSocketChat = (roomId?: string) => {
       socket.off("message-react", handleMessageReaction);
       socket.off("message-react-update", handleReactionUpdate);
       socket.off("pin-message-update", handlePinUpdate);
+      socket.off("message-error", handleMessageError);
 
-      socket.emit("leave-room", roomId);
+      // NOTE: Do NOT emit leave-room here - MediasoupContext handles that
       // ❌ DO NOT socket.disconnect() (singleton!)
     };
   }, [roomId, user]);
@@ -233,11 +260,7 @@ export const useSocketChat = (roomId?: string) => {
   // SEND MESSAGE
   // ----------------------------
   const sendMessage = useCallback(
-    (
-      text: string,
-      replyTo?: SocketChatMessage,
-      attachments?: ChatAttachment[]
-    ) => {
+    (text: string, replyTo?: SocketChatMessage) => {
       if (!roomId || !socket.id || !user) return;
 
       const message: SocketChatMessage = {
@@ -254,7 +277,6 @@ export const useSocketChat = (roomId?: string) => {
             "Anonymous",
           avatarUrl: user.imageUrl,
         },
-        attachments,
         replyTo: replyTo
           ? {
               id: replyTo.id,
@@ -265,6 +287,8 @@ export const useSocketChat = (roomId?: string) => {
       };
 
       socket.emit("send-message", { roomId, message });
+
+      // Optimistic update: add message immediately for sender
       setMessages((prev) => [...prev, { socketId: socket.id!, message }]);
     },
     [roomId, socket, user]

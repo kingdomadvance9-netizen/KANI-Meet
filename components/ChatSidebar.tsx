@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   useSocketChat,
   SocketChatMessage,
-  ChatAttachment,
 } from "@/hooks/useSocketChat";
 
 import {
@@ -13,7 +13,6 @@ import {
   Send,
   Reply,
   Pin,
-  Plus,
   ThumbsUp,
   Heart,
   Laugh,
@@ -86,59 +85,34 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
   const [replyTo, setReplyTo] = useState<SocketChatMessage | null>(null);
 
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // Auto-scroll to bottom when messages change (if user is near bottom)
+  useEffect(() => {
+    if (isNearBottom && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isNearBottom]);
 
-  const uploadAttachment = (
-    file: File,
-    onProgress: (p: number) => void
-  ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const form = new FormData();
-      form.append("file", file);
+  // Check if user is near bottom of chat
+  const checkIfNearBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
-        }
-      };
-
-      xhr.onload = () => {
-        const res = JSON.parse(xhr.responseText);
-        resolve(res.url);
-      };
-
-      xhr.onerror = reject;
-
-      xhr.open("POST", "/api/upload");
-      xhr.send(form);
-    });
+    const threshold = 150; // pixels from bottom
+    const isNear =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold;
+    setIsNearBottom(isNear);
   };
 
-  const handleSend = async () => {
-    if (!input.trim() && attachments.length === 0) return;
+  const handleSend = () => {
+    if (!input.trim()) return;
 
-    // Send optimistic message first
-    sendMessage(input, replyTo ?? undefined, attachments);
+    sendMessage(input, replyTo ?? undefined);
 
-    // Upload attachments
-    for (const att of attachments) {
-      if (!att.file) continue;
-
-      const url = await uploadAttachment(att.file, (p) => {
-        setAttachments((prev) =>
-          prev.map((a) => (a.id === att.id ? { ...a, progress: p } : a))
-        );
-      });
-
-      att.url = url;
-      att.uploading = false;
-    }
-
-    setAttachments([]);
     setInput("");
     setReplyTo(null);
   };
@@ -179,11 +153,15 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
       {pinnedMessage && (
         <div
           onClick={() => scrollToMessage(pinnedMessage.id)}
-          className="cursor-pointer px-4 py-2 text-xs bg-yellow-900/30 text-yellow-300 border-b border-yellow-700 flex gap-2 items-center"
+          className="cursor-pointer px-4 py-2 text-xs bg-yellow-900/30 text-yellow-300 border-b border-yellow-700 flex gap-2 items-center hover:bg-yellow-900/40 transition-colors"
+          title={`${pinnedMessage.sender.name}: ${pinnedMessage.text}`}
         >
-          <Pin size={14} />
-          <span>
-            <b>{pinnedMessage.sender.name}:</b> {pinnedMessage.text}
+          <Pin size={14} className="flex-shrink-0" />
+          <span className="truncate">
+            <b>{pinnedMessage.sender.name}:</b>{" "}
+            {pinnedMessage.text.length > 60
+              ? `${pinnedMessage.text.substring(0, 60)}...`
+              : pinnedMessage.text}
           </span>
         </div>
       )}
@@ -196,7 +174,11 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
       )}
 
       {/* MESSAGES */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+      <div
+        ref={messagesContainerRef}
+        onScroll={checkIfNearBottom}
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-1 scroll-smooth"
+      >
         {firstMessageDay && (
           <div className="text-center text-xs text-gray-500 my-3">
             — {firstMessageDay} —
@@ -213,9 +195,15 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
               2 * 60 * 1000;
 
           return (
-            <div
+            <motion.div
               key={m.message.id}
-              ref={(el) => {
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{
+                duration: 0.2,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              ref={(el: HTMLDivElement | null) => {
                 messageRefs.current[m.message.id] = el;
               }}
               className={cn(
@@ -258,40 +246,9 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
                 })()}
 
               {/* MESSAGE TEXT */}
-              <div>{m.message.text}</div>
+              <div className="break-words">{m.message.text}</div>
 
-              {/* ATTACHMENTS */}
-              {(() => {
-                const atts = m.message.attachments;
-                if (!atts || atts.length === 0) return null;
-
-                return (
-                  <div className="mt-2 space-y-1">
-                    {atts.map((att) => (
-                      <div key={att.id}>
-                        {att.type === "image" && (
-                          <img
-                            src={att.url ?? att.previewUrl}
-                            alt={att.name}
-                            className="max-w-full rounded cursor-pointer"
-                            onClick={() =>
-                              setPreviewImage(att.url ?? att.previewUrl ?? null)
-                            }
-                          />
-                        )}
-
-                        {att.type !== "image" && (
-                          <div className="text-xs bg-black/30 px-2 py-1 rounded">
-                            📎 {att.name}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {/* REACTIONS (PUT IT HERE 👇) */}
+              {/* REACTIONS */}
               {m.message.reactions && (
                 <div className="flex gap-1 mt-1 text-xs">
                   {Object.entries(m.message.reactions).map(([emoji, users]) => (
@@ -368,15 +325,68 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
                   </button>
                 </div>
               )}
-            </div>
+            </motion.div>
           );
         })}
+
+        {/* Scroll anchor */}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* TYPING */}
+      {/* TYPING INDICATORS */}
       {typingUsers.length > 0 && (
-        <div className="px-4 pb-2 text-xs text-gray-400">
-          {typingUsers.map((u) => u.name).join(", ")} typing…
+        <div className="px-4 pb-2 text-xs text-gray-400 flex items-center gap-2">
+          {(() => {
+            const count = typingUsers.length;
+
+            if (count === 1) {
+              return <span>{typingUsers[0].name} is typing...</span>;
+            }
+
+            if (count === 2) {
+              return (
+                <span>
+                  {typingUsers[0].name} and {typingUsers[1].name} are typing...
+                </span>
+              );
+            }
+
+            if (count === 3) {
+              return (
+                <span>
+                  {typingUsers[0].name}, {typingUsers[1].name}, and{" "}
+                  {typingUsers[2].name} are typing...
+                </span>
+              );
+            }
+
+            if (count === 4) {
+              return (
+                <span>
+                  {typingUsers[0].name}, {typingUsers[1].name}, and 2 others
+                  are typing...
+                </span>
+              );
+            }
+
+            // 5+ users: Show first 3 avatars + count
+            return (
+              <div className="flex items-center gap-1.5">
+                {typingUsers.slice(0, 3).map((u, i) => (
+                  <div
+                    key={i}
+                    className="w-5 h-5 rounded-full bg-gray-600 text-white flex items-center justify-center text-[9px] font-semibold"
+                  >
+                    {u.name.charAt(0).toUpperCase()}
+                  </div>
+                ))}
+                <span className="text-gray-400">
+                  and {count - 3} {count - 3 === 1 ? "other" : "others"} are
+                  typing...
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -397,77 +407,30 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
       )}
 
       {/* INPUT */}
-      <div className="p-3 border-t border-gray-700 space-y-2">
-        {/* ATTACHMENT PREVIEW STRIP */}
-        {attachments.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
-            {attachments.map((att) => (
-              <div
-                key={att.id}
-                className="relative bg-black/30 rounded p-1 text-xs text-white"
-              >
-                {att.type === "image" ? (
-                  <img
-                    src={att.previewUrl}
-                    alt={att.name}
-                    className="w-20 h-20 object-cover rounded"
-                  />
-                ) : (
-                  <div className="px-2 py-1">📎 {att.name}</div>
-                )}
-
-                {/* UPLOAD PROGRESS */}
-                {att.uploading && (
-                  <div className="h-1 bg-gray-700 mt-1 rounded overflow-hidden">
-                    <div
-                      className="h-1 bg-blue-500 rounded transition-all"
-                      style={{ width: `${att.progress ?? 0}%` }}
-                    />
-                  </div>
-                )}
-
-                <button
-                  onClick={() =>
-                    setAttachments((prev) =>
-                      prev.filter((a) => a.id !== att.id)
-                    )
-                  }
-                  className="absolute -top-2 -right-2 bg-red-500 rounded-full w-4 h-4 text-[10px]"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* INPUT ROW */}
+      <div className="p-3 border-t border-gray-700">
         <div className="flex gap-2 items-center">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10"
-            title="Add attachment"
-          >
-            <Plus size={18} />
-          </button>
-
           <input
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
               startTyping();
             }}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             placeholder="Type a message…"
-            className="flex-1 rounded-md bg-[#0f141a] border border-gray-600 px-1 py-2 text-sm text-white outline-none focus:border-blue-500"
+            className="flex-1 rounded-md bg-[#0f141a] border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-blue-500 transition"
           />
 
           <button
             onClick={handleSend}
-            disabled={!input.trim() && attachments.length === 0}
+            disabled={!input.trim()}
             className={cn(
               "p-2 rounded-md transition",
-              input.trim() || attachments.length > 0
+              input.trim()
                 ? "text-blue-500 hover:bg-blue-500/10"
                 : "text-gray-500 cursor-not-allowed"
             )}
@@ -475,47 +438,7 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
             <Send size={20} />
           </button>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          onChange={async (e) => {
-            const files = Array.from(e.target.files || []);
-
-            const mapped: ChatAttachment[] = files.map((file) => ({
-              id: crypto.randomUUID(),
-              name: file.name,
-              type: file.type.startsWith("image")
-                ? "image"
-                : file.type.startsWith("video")
-                ? "video"
-                : file.type.startsWith("audio")
-                ? "audio"
-                : "file",
-              mime: file.type,
-              size: file.size,
-              previewUrl: URL.createObjectURL(file),
-              uploading: true,
-              progress: 0,
-              file,
-            }));
-
-            setAttachments((prev) => [...prev, ...mapped]);
-            e.target.value = "";
-          }}
-        />
       </div>
-
-      {previewImage && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
-          onClick={() => setPreviewImage(null)}
-        >
-          <img src={previewImage} className="max-h-[90%] max-w-[90%] rounded" />
-        </div>
-      )}
     </aside>
   );
 };
