@@ -52,9 +52,11 @@ const CustomCallControls = () => {
   // Check if user has admin privileges (Host or Co-Host)
   const hasAdminPrivileges = isHost || isCoHost;
 
-  // Host and Co-Host are NEVER locked, even if backend sends lock state
+  // Host and Co-Host are NEVER locked or affected by global controls
   const audioLocked = hasAdminPrivileges ? false : (currentParticipant?.audioLocked ?? false);
   const screenShareLocked = hasAdminPrivileges ? false : (currentParticipant?.screenShareLocked ?? false);
+  const videoDisabled = hasAdminPrivileges ? false : (forceVideoPaused || globalVideoDisabled);
+  const screenShareDisabled = hasAdminPrivileges ? false : (!isScreenShareGloballyEnabled || screenShareLocked);
 
   // Additional States
   const [isRecording, setIsRecording] = useState(false);
@@ -135,23 +137,16 @@ const CustomCallControls = () => {
       {/* VIDEO BUTTON */}
       <button
         onClick={toggleVideo}
-        disabled={forceVideoPaused || globalVideoDisabled}
+        disabled={videoDisabled}
         className={cn(
           "p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           !isVideoEnabled
             ? "bg-red-500 text-white"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4",
-          (forceVideoPaused || globalVideoDisabled) &&
-            "opacity-50 cursor-not-allowed"
+          videoDisabled && "opacity-50 cursor-not-allowed"
         )}
         aria-label={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
-        title={
-          globalVideoDisabled
-            ? "All cameras disabled by host"
-            : forceVideoPaused
-            ? "Your camera disabled by host"
-            : ""
-        }
+        title={videoDisabled ? "Camera disabled by host" : ""}
       >
         {isVideoEnabled ? (
           <Video className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -164,12 +159,11 @@ const CustomCallControls = () => {
       <button
         onClick={toggleScreenShare}
         disabled={
-          screenShareLocked ||
-          !isScreenShareGloballyEnabled ||
+          screenShareDisabled ||
           (!isScreenSharing && screenShareStreams.size > 0)
         }
         title={
-          screenShareLocked || !isScreenShareGloballyEnabled
+          screenShareDisabled
             ? "Screen sharing disabled by host"
             : !isScreenSharing && screenShareStreams.size > 0
             ? "Someone is already sharing"
@@ -182,8 +176,7 @@ const CustomCallControls = () => {
           isScreenSharing
             ? "bg-blue-500 text-white"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4",
-          (screenShareLocked ||
-            !isScreenShareGloballyEnabled ||
+          (screenShareDisabled ||
             (!isScreenSharing && screenShareStreams.size > 0)) &&
             "opacity-50 cursor-not-allowed"
         )}
@@ -264,8 +257,7 @@ const CustomCallControls = () => {
                   setIsMenuOpen(false);
                 }}
                 disabled={
-                  screenShareLocked ||
-                  !isScreenShareGloballyEnabled ||
+                  screenShareDisabled ||
                   (!isScreenSharing && screenShareStreams.size > 0)
                 }
                 className={cn(
@@ -273,15 +265,14 @@ const CustomCallControls = () => {
                   isScreenSharing
                     ? "bg-blue-500/20 text-blue-400"
                     : "text-gray-300 hover:bg-dark-3",
-                  (screenShareLocked ||
-                    !isScreenShareGloballyEnabled ||
+                  (screenShareDisabled ||
                     (!isScreenSharing && screenShareStreams.size > 0)) &&
                     "opacity-50 cursor-not-allowed"
                 )}
               >
                 <MonitorUp className="w-5 h-5" />
                 <span className="text-sm font-medium">
-                  {screenShareLocked || !isScreenShareGloballyEnabled
+                  {screenShareDisabled
                     ? "Screen Sharing Disabled"
                     : !isScreenSharing && screenShareStreams.size > 0
                     ? "Someone is Sharing"

@@ -487,6 +487,16 @@ export const MediasoupProvider = ({
     socketInstance.on("allow-unmute", ({ by, locked }: { by: string; locked?: boolean }) => {
       // Remove the mute restriction flag
       setForceMuted(locked ?? false);
+
+      // Update local participant state to clear audioLocked
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === (socketInstance as any)?.auth?.userId
+            ? { ...p, audioLocked: locked ?? false }
+            : p
+        )
+      );
+
       console.log(`🔊 ${by} allowed you to unmute`);
       toast.success(`${by} allowed you to unmute`);
     });
@@ -592,6 +602,40 @@ export const MediasoupProvider = ({
       setGlobalVideoDisabled(false);
       console.log(`📹 Cameras unlocked by ${by}`);
       toast.success(`${by} allowed cameras to be enabled`);
+    });
+
+    // Listen for screen share control events from admin
+    socketInstance.on("screenshare-control", ({ enabled, by }: { enabled: boolean; by: string }) => {
+      console.log(`🖥️ SCREENSHARE-CONTROL received from ${by}: enabled=${enabled}`);
+
+      // Update global screen share enabled flag
+      setIsScreenShareGloballyEnabled(enabled);
+
+      // Update local participant's screenShareLocked state
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === (socketInstance as any)?.auth?.userId
+            ? { ...p, screenShareLocked: !enabled }
+            : p
+        )
+      );
+
+      if (enabled) {
+        console.log(`🖥️ Screen sharing unlocked by ${by}`);
+        toast.success(`${by} enabled screen sharing`);
+      } else {
+        console.warn(`🖥️ Screen sharing disabled by ${by}`);
+        toast.info(`${by} disabled screen sharing`);
+
+        // Stop local screen share if active
+        if (screenProducerRef.current) {
+          const producerId = screenProducerRef.current.id;
+          screenProducerRef.current.close();
+          screenProducerRef.current = null;
+          setIsScreenSharing(false);
+          console.log(`🖥️ Stopped screen share (producer ${producerId}) due to admin disable`);
+        }
+      }
     });
 
     // Listen for host commands to stop screen share
@@ -821,6 +865,7 @@ export const MediasoupProvider = ({
       socketInstance.off("allow-unpause");
       socketInstance.off("disable-all-cameras");
       socketInstance.off("enable-all-cameras");
+      socketInstance.off("screenshare-control");
       socketInstance.off("kicked-from-room");
       socketInstance.off("producer-closed");
       socketInstance.off("new-producer");
