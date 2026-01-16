@@ -14,6 +14,8 @@ interface Participant {
   isVideoPaused: boolean;
   isHost: boolean;
   isCoHost?: boolean;
+  audioLocked?: boolean; // Cannot unmute when true
+  screenShareLocked?: boolean; // Cannot screen share when true
 }
 
 type MediasoupContextType = {
@@ -53,6 +55,7 @@ type MediasoupContextType = {
     userImageUrl?: string,
     isCreator?: boolean
   ) => Promise<void>;
+  leaveRoom: () => void;
 };
 
 const MediasoupContext = createContext<MediasoupContextType | null>(null);
@@ -122,6 +125,7 @@ export const MediasoupProvider = ({
   const currentUserIdRef = useRef<string | null>(null);
   const hasJoinedRef = useRef<boolean>(false);
   const peerIdToUserIdRef = useRef<Map<string, string>>(new Map());
+  const isInitialParticipantListRef = useRef<boolean>(true);
 
   // Consumer tracking map: consumerId -> { consumer, userId, isScreenShare }
   const consumersRef = useRef<
@@ -200,6 +204,18 @@ export const MediasoupProvider = ({
           if (newParticipantIds.length > 0) {
             console.log("🆕 New participants detected:", newParticipantIds);
 
+            // Show toast notification for each new participant (skip on initial load)
+            if (!isInitialParticipantListRef.current) {
+              newParticipantIds.forEach((newId) => {
+                const newParticipant = updatedList.find((p) => p.id === newId);
+                if (newParticipant) {
+                  toast.success(`${newParticipant.name} joined the meeting`, {
+                    duration: 3000,
+                  });
+                }
+              });
+            }
+
             // Check if we have any unmapped streams (keyed by socket IDs)
             setRemoteStreams((prevStreams) => {
               const newStreamsMap = new Map(prevStreams);
@@ -236,6 +252,9 @@ export const MediasoupProvider = ({
 
           return updatedList;
         });
+
+        // Mark that initial participant list has been loaded
+        isInitialParticipantListRef.current = false;
 
         // Also try to request socket-to-user mapping (if server supports it)
         updatedList.forEach((participant) => {
@@ -301,8 +320,17 @@ export const MediasoupProvider = ({
           return;
         }
 
-        // Remove from participants list
-        setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+        // Get participant name before removing
+        setParticipants((prev) => {
+          const leavingParticipant = prev.find((p) => p.id === participantId);
+          if (leavingParticipant) {
+            // Show toast notification
+            toast.info(`${leavingParticipant.name} left the meeting`, {
+              duration: 3000,
+            });
+          }
+          return prev.filter((p) => p.id !== participantId);
+        });
 
         // Clean up video/audio streams for this peer
         setRemoteStreams((prev) => {
@@ -412,10 +440,18 @@ export const MediasoupProvider = ({
     // ✅ Force control events from host
     socketInstance.on(
       "force-mute",
-      ({ audio, by }: { audio: boolean; by: string }) => {
+      ({
+        audio,
+        by,
+        locked,
+      }: {
+        audio: boolean;
+        by: string;
+        locked?: boolean;
+      }) => {
         console.log(`====================================`);
         console.log(`🎤 FORCE-MUTE EVENT RECEIVED`);
-        console.log(`   audio=${audio}, by=${by}`);
+        console.log(`   audio=${audio}, by=${by}, locked=${locked}`);
         console.log(`   This should ONLY affect MICROPHONE`);
         console.log(`====================================`);
 
@@ -427,7 +463,7 @@ export const MediasoupProvider = ({
             audioProducerRef.current.close();
             audioProducerRef.current = null;
             setIsAudioMuted(true);
-            setForceMuted(true); // Lock mic until admin unmutes
+            setForceMuted(locked ?? true); // Lock mic based on backend state
 
             setLocalStream((prev) => {
               if (!prev) return null;
@@ -440,7 +476,7 @@ export const MediasoupProvider = ({
           setParticipants((prev) =>
             prev.map((p) =>
               p.id === (socketInstance as any)?.auth?.userId
-                ? { ...p, isAudioMuted: true }
+                ? { ...p, isAudioMuted: true, audioLocked: locked ?? true }
                 : p
             )
           );
@@ -449,19 +485,32 @@ export const MediasoupProvider = ({
           toast.info(`${by} muted you`);
         } else {
           // Unmute - unlock the button
-          setForceMuted(false);
+          setForceMuted(locked ?? false);
           console.log(`🔊 ${by} unlocked your microphone (audio=${audio})`);
           toast.success(`${by} allowed you to unmute`);
         }
       }
     );
 
-    socketInstance.on("allow-unmute", ({ by }: { by: string }) => {
-      // Remove the mute restriction flag
-      setForceMuted(false);
-      console.log(`🔊 ${by} allowed you to unmute`);
-      toast.success(`${by} allowed you to unmute`);
-    });
+    socketInstance.on(
+      "allow-unmute",
+      ({ by, locked }: { by: string; locked?: boolean }) => {
+        // Remove the mute restriction flag
+        setForceMuted(locked ?? false);
+
+        // Update local participant state to clear audioLocked
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === (socketInstance as any)?.auth?.userId
+              ? { ...p, audioLocked: locked ?? false }
+              : p
+          )
+        );
+
+        console.log(`🔊 ${by} allowed you to unmute`);
+        toast.success(`${by} allowed you to unmute`);
+      }
+    );
 
     socketInstance.on(
       "force-video-pause",
@@ -565,6 +614,47 @@ export const MediasoupProvider = ({
       console.log(`📹 Cameras unlocked by ${by}`);
       toast.success(`${by} allowed cameras to be enabled`);
     });
+
+    // Listen for screen share control events from admin
+    socketInstance.on(
+      "screenshare-control",
+      ({ enabled, by }: { enabled: boolean; by: string }) => {
+        console.log(
+          `🖥️ SCREENSHARE-CONTROL received from ${by}: enabled=${enabled}`
+        );
+
+        // Update global screen share enabled flag
+        setIsScreenShareGloballyEnabled(enabled);
+
+        // Update local participant's screenShareLocked state
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === (socketInstance as any)?.auth?.userId
+              ? { ...p, screenShareLocked: !enabled }
+              : p
+          )
+        );
+
+        if (enabled) {
+          console.log(`🖥️ Screen sharing unlocked by ${by}`);
+          toast.success(`${by} enabled screen sharing`);
+        } else {
+          console.warn(`🖥️ Screen sharing disabled by ${by}`);
+          toast.info(`${by} disabled screen sharing`);
+
+          // Stop local screen share if active
+          if (screenProducerRef.current) {
+            const producerId = screenProducerRef.current.id;
+            screenProducerRef.current.close();
+            screenProducerRef.current = null;
+            setIsScreenSharing(false);
+            console.log(
+              `🖥️ Stopped screen share (producer ${producerId}) due to admin disable`
+            );
+          }
+        }
+      }
+    );
 
     // Listen for host commands to stop screen share
     socketInstance.on("host-stop-screenshare", ({ by }: { by: string }) => {
@@ -793,6 +883,7 @@ export const MediasoupProvider = ({
       socketInstance.off("allow-unpause");
       socketInstance.off("disable-all-cameras");
       socketInstance.off("enable-all-cameras");
+      socketInstance.off("screenshare-control");
       socketInstance.off("kicked-from-room");
       socketInstance.off("producer-closed");
       socketInstance.off("new-producer");
@@ -1310,6 +1401,17 @@ export const MediasoupProvider = ({
   const startAudio = async () => {
     if (!sendTransportRef.current || audioProducerRef.current) return;
 
+    // Check if audio is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.audioLocked) {
+      console.warn("🔇 Cannot start audio - audio locked by host");
+      toast.warning("You have been muted by the host");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioTrack = stream.getAudioTracks()[0];
@@ -1368,6 +1470,17 @@ export const MediasoupProvider = ({
   };
 
   const unmuteAudio = async () => {
+    // Check if audio is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.audioLocked) {
+      console.warn("🔇 Cannot unmute - audio locked by host");
+      toast.warning("You have been muted by the host");
+      return;
+    }
+
     // If producer exists and is paused, just resume it
     if (audioProducerRef.current && audioProducerRef.current.paused) {
       audioProducerRef.current.resume();
@@ -1606,6 +1719,17 @@ export const MediasoupProvider = ({
   const enableScreenShare = async () => {
     if (!sendTransportRef.current || screenProducerRef.current) return;
 
+    // Check if screen sharing is locked by host (Host/Co-Host are never locked)
+    const currentUser = participants.find(
+      (p) => p.id === (socket as any)?.auth?.userId
+    );
+    const isHostOrCoHost = currentUser?.isHost || currentUser?.isCoHost;
+    if (!isHostOrCoHost && currentUser?.screenShareLocked) {
+      toast.error("Screen sharing is disabled by the host");
+      console.warn("🚫 Cannot share screen - locked by host");
+      return;
+    }
+
     // Check if screen sharing is globally disabled
     if (!isScreenShareGloballyEnabled) {
       toast.error("Screen sharing is disabled by the host");
@@ -1806,6 +1930,72 @@ export const MediasoupProvider = ({
     console.log("✅ remove-cohost event emitted");
   };
 
+  const leaveRoom = () => {
+    console.log("👋 Leaving room - cleaning up all media and connections");
+
+    try {
+      // Stop and close all local media tracks and producers
+      if (audioProducerRef.current) {
+        audioProducerRef.current.track?.stop();
+        audioProducerRef.current.close();
+        audioProducerRef.current = null;
+      }
+
+      if (videoProducerRef.current) {
+        videoProducerRef.current.track?.stop();
+        videoProducerRef.current.close();
+        videoProducerRef.current = null;
+      }
+
+      if (screenProducerRef.current) {
+        screenProducerRef.current.track?.stop();
+        screenProducerRef.current.close();
+        screenProducerRef.current = null;
+      }
+
+      // Stop all local stream tracks
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+        setLocalStream(null);
+      }
+
+      if (localScreenStream) {
+        localScreenStream.getTracks().forEach((track) => track.stop());
+        setLocalScreenStream(null);
+      }
+
+      // Close all consumers (each entry is { consumer, userId, isScreenShare })
+      consumersRef.current.forEach(({ consumer }) => {
+        try {
+          consumer.close();
+        } catch (err) {
+          console.error("Error closing consumer:", err);
+        }
+      });
+      consumersRef.current.clear();
+
+      // Clear remote streams
+      setRemoteStreams(new Map());
+      setScreenShareStreams(new Set());
+
+      // Clear participants
+      setParticipants([]);
+
+      // Reset initial participant list flag for next join
+      isInitialParticipantListRef.current = true;
+
+      // Disconnect the socket - this will trigger the backend's 'disconnecting' event
+      if (socket) {
+        socket.disconnect();
+        console.log("🔌 Socket disconnected");
+      }
+
+      console.log("✅ Successfully cleaned up and left room");
+    } catch (err) {
+      console.error("Error during leaveRoom cleanup:", err);
+    }
+  };
+
   return (
     <MediasoupContext.Provider
       value={{
@@ -1839,6 +2029,7 @@ export const MediasoupProvider = ({
         makeCoHost,
         removeCoHost,
         joinRoom,
+        leaveRoom,
       }}
     >
       {children}

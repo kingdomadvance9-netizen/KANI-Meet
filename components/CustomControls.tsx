@@ -40,7 +40,23 @@ const CustomCallControls = () => {
     forceVideoPaused,
     globalVideoDisabled,
     screenShareStreams,
+    leaveRoom,
+    participants,
+    isHost,
+    isCoHost,
   } = useMediasoupContext();
+
+  // Get current participant's lock states
+  const currentParticipant = participants.find((p) => p.id === user?.id);
+
+  // Check if user has admin privileges (Host or Co-Host)
+  const hasAdminPrivileges = isHost || isCoHost;
+
+  // Host and Co-Host are NEVER locked or affected by global controls
+  const audioLocked = hasAdminPrivileges ? false : (currentParticipant?.audioLocked ?? false);
+  const screenShareLocked = hasAdminPrivileges ? false : (currentParticipant?.screenShareLocked ?? false);
+  const videoDisabled = hasAdminPrivileges ? false : (forceVideoPaused || globalVideoDisabled);
+  const screenShareDisabled = hasAdminPrivileges ? false : (!isScreenShareGloballyEnabled || screenShareLocked);
 
   // Additional States
   const [isRecording, setIsRecording] = useState(false);
@@ -50,9 +66,6 @@ const CustomCallControls = () => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const portalMenuRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<ReactionOverlayLayerHandle | null>(null);
-
-  // ✅ Admin Check (Could be enhanced later)
-  const isAdmin = true;
 
   // Handlers
   const toggleScreenShare = async () => {
@@ -69,7 +82,9 @@ const CustomCallControls = () => {
   };
 
   const handleLeave = () => {
-    // Disconnect and navigate away
+    // Clean up all media and disconnect socket
+    leaveRoom();
+    // Navigate away after cleanup
     router.push("/");
   };
 
@@ -101,16 +116,16 @@ const CustomCallControls = () => {
       {/* AUDIO BUTTON */}
       <button
         onClick={toggleAudio}
-        disabled={forceMuted}
+        disabled={audioLocked}
         className={cn(
           "p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           isAudioMuted
             ? "bg-red-500 text-white"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4",
-          forceMuted && "opacity-50 cursor-not-allowed"
+          audioLocked && "opacity-50 cursor-not-allowed"
         )}
         aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
-        title={forceMuted ? "Muted by host" : ""}
+        title={audioLocked ? "Muted by host" : ""}
       >
         {isAudioMuted ? (
           <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -122,23 +137,16 @@ const CustomCallControls = () => {
       {/* VIDEO BUTTON */}
       <button
         onClick={toggleVideo}
-        disabled={forceVideoPaused || globalVideoDisabled}
+        disabled={videoDisabled}
         className={cn(
           "p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           !isVideoEnabled
             ? "bg-red-500 text-white"
             : "bg-dark-3 text-gray-300 hover:bg-dark-4",
-          (forceVideoPaused || globalVideoDisabled) &&
-            "opacity-50 cursor-not-allowed"
+          videoDisabled && "opacity-50 cursor-not-allowed"
         )}
         aria-label={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
-        title={
-          globalVideoDisabled
-            ? "All cameras disabled by host"
-            : forceVideoPaused
-            ? "Your camera disabled by host"
-            : ""
-        }
+        title={videoDisabled ? "Camera disabled by host" : ""}
       >
         {isVideoEnabled ? (
           <Video className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -151,11 +159,11 @@ const CustomCallControls = () => {
       <button
         onClick={toggleScreenShare}
         disabled={
-          !isScreenShareGloballyEnabled ||
+          screenShareDisabled ||
           (!isScreenSharing && screenShareStreams.size > 0)
         }
         title={
-          !isScreenShareGloballyEnabled
+          screenShareDisabled
             ? "Screen sharing disabled by host"
             : !isScreenSharing && screenShareStreams.size > 0
             ? "Someone is already sharing"
@@ -167,10 +175,10 @@ const CustomCallControls = () => {
           "hidden sm:flex p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
           isScreenSharing
             ? "bg-blue-500 text-white"
-            : !isScreenShareGloballyEnabled ||
-              (!isScreenSharing && screenShareStreams.size > 0)
-            ? "bg-dark-3/50 text-gray-500 cursor-not-allowed"
-            : "bg-dark-3 text-gray-300 hover:bg-dark-4"
+            : "bg-dark-3 text-gray-300 hover:bg-dark-4",
+          (screenShareDisabled ||
+            (!isScreenSharing && screenShareStreams.size > 0)) &&
+            "opacity-50 cursor-not-allowed"
         )}
         aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
       >
@@ -178,7 +186,7 @@ const CustomCallControls = () => {
       </button>
 
       {/* RECORDING (Admin Only) - Hidden on mobile, visible on tablet+ */}
-      {isAdmin && (
+      {hasAdminPrivileges && (
         <button
           onClick={toggleRecording}
           className={cn(
@@ -248,20 +256,26 @@ const CustomCallControls = () => {
                   toggleScreenShare();
                   setIsMenuOpen(false);
                 }}
-                disabled={!isScreenShareGloballyEnabled}
+                disabled={
+                  screenShareDisabled ||
+                  (!isScreenSharing && screenShareStreams.size > 0)
+                }
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3.5 transition-all touch-manipulation active:bg-dark-4",
                   isScreenSharing
                     ? "bg-blue-500/20 text-blue-400"
-                    : !isScreenShareGloballyEnabled
-                    ? "text-gray-500 cursor-not-allowed opacity-50"
-                    : "text-gray-300 hover:bg-dark-3"
+                    : "text-gray-300 hover:bg-dark-3",
+                  (screenShareDisabled ||
+                    (!isScreenSharing && screenShareStreams.size > 0)) &&
+                    "opacity-50 cursor-not-allowed"
                 )}
               >
                 <MonitorUp className="w-5 h-5" />
                 <span className="text-sm font-medium">
-                  {!isScreenShareGloballyEnabled
+                  {screenShareDisabled
                     ? "Screen Sharing Disabled"
+                    : !isScreenSharing && screenShareStreams.size > 0
+                    ? "Someone is Sharing"
                     : isScreenSharing
                     ? "Stop Sharing"
                     : "Share Screen"}
@@ -283,7 +297,7 @@ const CustomCallControls = () => {
               </button>
 
               {/* Recording Option (Admin Only) */}
-              {isAdmin && (
+              {hasAdminPrivileges && (
                 <button
                   onClick={(e) => {
                     e.preventDefault();
