@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Dispatch, SetStateAction } from "react";
 import { Mic, MicOff, VideoOff } from "lucide-react";
 
 interface MediasoupTileProps {
@@ -9,6 +9,7 @@ interface MediasoupTileProps {
   participantImage?: string;
   isLocal?: boolean;
   isHost?: boolean;
+  onVideoElement?: Dispatch<SetStateAction<HTMLVideoElement | null>>;
 }
 
 const MediasoupTile = ({
@@ -17,12 +18,23 @@ const MediasoupTile = ({
   participantImage,
   isLocal,
   isHost,
+  onVideoElement,
 }: MediasoupTileProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const [hasVideo, setHasVideo] = useState(false);
   const [isTalking, setIsTalking] = useState(false);
+
+  useEffect(() => {
+    // Expose the local video element (used by parent for PiP)
+    if (isLocal && onVideoElement) {
+      onVideoElement(videoRef.current);
+      return () => onVideoElement(null);
+    }
+    // If not local, ensure parent doesn't hold onto an element
+    return () => {};
+  }, [isLocal, onVideoElement]);
 
   useEffect(() => {
     if (!stream) return;

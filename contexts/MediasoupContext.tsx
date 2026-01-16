@@ -14,8 +14,8 @@ interface Participant {
   isVideoPaused: boolean;
   isHost: boolean;
   isCoHost?: boolean;
-  audioLocked?: boolean;        // Cannot unmute when true
-  screenShareLocked?: boolean;  // Cannot screen share when true
+  audioLocked?: boolean; // Cannot unmute when true
+  screenShareLocked?: boolean; // Cannot screen share when true
 }
 
 type MediasoupContextType = {
@@ -440,7 +440,15 @@ export const MediasoupProvider = ({
     // ✅ Force control events from host
     socketInstance.on(
       "force-mute",
-      ({ audio, by, locked }: { audio: boolean; by: string; locked?: boolean }) => {
+      ({
+        audio,
+        by,
+        locked,
+      }: {
+        audio: boolean;
+        by: string;
+        locked?: boolean;
+      }) => {
         console.log(`====================================`);
         console.log(`🎤 FORCE-MUTE EVENT RECEIVED`);
         console.log(`   audio=${audio}, by=${by}, locked=${locked}`);
@@ -484,22 +492,25 @@ export const MediasoupProvider = ({
       }
     );
 
-    socketInstance.on("allow-unmute", ({ by, locked }: { by: string; locked?: boolean }) => {
-      // Remove the mute restriction flag
-      setForceMuted(locked ?? false);
+    socketInstance.on(
+      "allow-unmute",
+      ({ by, locked }: { by: string; locked?: boolean }) => {
+        // Remove the mute restriction flag
+        setForceMuted(locked ?? false);
 
-      // Update local participant state to clear audioLocked
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === (socketInstance as any)?.auth?.userId
-            ? { ...p, audioLocked: locked ?? false }
-            : p
-        )
-      );
+        // Update local participant state to clear audioLocked
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === (socketInstance as any)?.auth?.userId
+              ? { ...p, audioLocked: locked ?? false }
+              : p
+          )
+        );
 
-      console.log(`🔊 ${by} allowed you to unmute`);
-      toast.success(`${by} allowed you to unmute`);
-    });
+        console.log(`🔊 ${by} allowed you to unmute`);
+        toast.success(`${by} allowed you to unmute`);
+      }
+    );
 
     socketInstance.on(
       "force-video-pause",
@@ -605,38 +616,45 @@ export const MediasoupProvider = ({
     });
 
     // Listen for screen share control events from admin
-    socketInstance.on("screenshare-control", ({ enabled, by }: { enabled: boolean; by: string }) => {
-      console.log(`🖥️ SCREENSHARE-CONTROL received from ${by}: enabled=${enabled}`);
+    socketInstance.on(
+      "screenshare-control",
+      ({ enabled, by }: { enabled: boolean; by: string }) => {
+        console.log(
+          `🖥️ SCREENSHARE-CONTROL received from ${by}: enabled=${enabled}`
+        );
 
-      // Update global screen share enabled flag
-      setIsScreenShareGloballyEnabled(enabled);
+        // Update global screen share enabled flag
+        setIsScreenShareGloballyEnabled(enabled);
 
-      // Update local participant's screenShareLocked state
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === (socketInstance as any)?.auth?.userId
-            ? { ...p, screenShareLocked: !enabled }
-            : p
-        )
-      );
+        // Update local participant's screenShareLocked state
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === (socketInstance as any)?.auth?.userId
+              ? { ...p, screenShareLocked: !enabled }
+              : p
+          )
+        );
 
-      if (enabled) {
-        console.log(`🖥️ Screen sharing unlocked by ${by}`);
-        toast.success(`${by} enabled screen sharing`);
-      } else {
-        console.warn(`🖥️ Screen sharing disabled by ${by}`);
-        toast.info(`${by} disabled screen sharing`);
+        if (enabled) {
+          console.log(`🖥️ Screen sharing unlocked by ${by}`);
+          toast.success(`${by} enabled screen sharing`);
+        } else {
+          console.warn(`🖥️ Screen sharing disabled by ${by}`);
+          toast.info(`${by} disabled screen sharing`);
 
-        // Stop local screen share if active
-        if (screenProducerRef.current) {
-          const producerId = screenProducerRef.current.id;
-          screenProducerRef.current.close();
-          screenProducerRef.current = null;
-          setIsScreenSharing(false);
-          console.log(`🖥️ Stopped screen share (producer ${producerId}) due to admin disable`);
+          // Stop local screen share if active
+          if (screenProducerRef.current) {
+            const producerId = screenProducerRef.current.id;
+            screenProducerRef.current.close();
+            screenProducerRef.current = null;
+            setIsScreenSharing(false);
+            console.log(
+              `🖥️ Stopped screen share (producer ${producerId}) due to admin disable`
+            );
+          }
         }
       }
-    });
+    );
 
     // Listen for host commands to stop screen share
     socketInstance.on("host-stop-screenshare", ({ by }: { by: string }) => {
@@ -1946,8 +1964,8 @@ export const MediasoupProvider = ({
         setLocalScreenStream(null);
       }
 
-      // Close all consumers
-      consumersRef.current.forEach((consumer) => {
+      // Close all consumers (each entry is { consumer, userId, isScreenShare })
+      consumersRef.current.forEach(({ consumer }) => {
         try {
           consumer.close();
         } catch (err) {
