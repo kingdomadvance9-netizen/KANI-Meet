@@ -154,8 +154,13 @@ export default function PaymentModal({
                 <div className="bg-white rounded-lg p-3 border border-green-200 mt-4">
                   <p className="text-sm text-gray-500">M-Pesa Receipt</p>
                   <p className="text-lg font-mono font-bold text-gray-800">
-                    {data.data.mpesaReceiptNumber}
+                    {data.data.mpesaReceiptNumber || "Processing..."}
                   </p>
+                  {!data.data.mpesaReceiptNumber && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Receipt will be available shortly
+                    </p>
+                  )}
                 </div>
 
                 {/* Blessing */}
