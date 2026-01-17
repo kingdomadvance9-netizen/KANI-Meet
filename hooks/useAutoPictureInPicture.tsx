@@ -119,29 +119,40 @@ export const useAutoPictureInPicture = ({
     return participants.find(p => p.id === dominantSpeakerId) || null;
   }, [participants, dominantSpeakerId]);
 
+  // Find screen share participant
+  const screenShareParticipant = useMemo(() => {
+    if (!screenShareParticipantId) return null;
+    return participants.find(p => p.id === screenShareParticipantId) || null;
+  }, [participants, screenShareParticipantId]);
+
   // Select target participant for PiP (Google Meet priority)
   const targetParticipant = useMemo(() => {
-    // Priority 1: Dominant speaker (if not screen sharing)
-    if (dominantSpeaker && dominantSpeaker.id !== screenShareParticipantId) {
+    // Priority 1: Screen share takes highest priority
+    if (screenShareParticipant) {
+      return screenShareParticipant;
+    }
+
+    // Priority 2: Dominant speaker
+    if (dominantSpeaker) {
       return dominantSpeaker;
     }
 
-    // Priority 2: Any remote participant with activity
+    // Priority 3: Any remote participant with activity
     const remoteParticipant = participants.find(
-      p => p.id !== localParticipant?.id && p.id !== screenShareParticipantId
+      p => p.id !== localParticipant?.id
     );
     if (remoteParticipant) {
       return remoteParticipant;
     }
 
-    // Priority 3: Local participant as fallback
+    // Priority 4: Local participant as fallback
     if (localParticipant) {
       return localParticipant;
     }
 
     // No valid participant
     return participants[0] || null;
-  }, [dominantSpeaker, screenShareParticipantId, participants, localParticipant]);
+  }, [screenShareParticipant, dominantSpeaker, participants, localParticipant]);
 
   // ============================================================================
   // VIDEO STREAM HELPERS
@@ -153,6 +164,15 @@ export const useAutoPictureInPicture = ({
     return videoEls.find(v => {
       const peerId = v.dataset.peerId;
       return peerId === participantId && !peerId?.includes("-screen");
+    }) || null;
+  }, []);
+
+  // Get screen share video element for a participant
+  const getScreenShareVideoElement = useCallback((participantId: string): HTMLVideoElement | null => {
+    const videoEls = Array.from(document.querySelectorAll("video")) as HTMLVideoElement[];
+    return videoEls.find(v => {
+      const peerId = v.dataset.peerId;
+      return peerId === `${participantId}-screen`;
     }) || null;
   }, []);
 
@@ -255,8 +275,31 @@ export const useAutoPictureInPicture = ({
     ctx.fillStyle = "#1f1f1f";
     ctx.fillRect(0, 0, PIP_WIDTH, PIP_HEIGHT);
 
-    // Draw main content (dominant speaker or target participant)
-    if (targetParticipant) {
+    // Draw main content - screen share takes priority
+    if (screenShareParticipantId) {
+      // Screen share is active - show it as main content
+      const screenShareVideoEl = getScreenShareVideoElement(screenShareParticipantId);
+      if (screenShareVideoEl) {
+        // Draw screen share (use object-contain style by fitting to canvas)
+        const videoWidth = screenShareVideoEl.videoWidth || PIP_WIDTH;
+        const videoHeight = screenShareVideoEl.videoHeight || PIP_HEIGHT;
+        const scale = Math.min(PIP_WIDTH / videoWidth, PIP_HEIGHT / videoHeight);
+        const scaledWidth = videoWidth * scale;
+        const scaledHeight = videoHeight * scale;
+        const offsetX = (PIP_WIDTH - scaledWidth) / 2;
+        const offsetY = (PIP_HEIGHT - scaledHeight) / 2;
+
+        // Fill background for letterboxing
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, PIP_WIDTH, PIP_HEIGHT);
+
+        drawVideoFrame(ctx, screenShareVideoEl, offsetX, offsetY, scaledWidth, scaledHeight, false);
+      } else if (targetParticipant) {
+        // Screen share not ready yet, show participant avatar
+        drawAvatar(ctx, targetParticipant, 0, 0, PIP_WIDTH, PIP_HEIGHT);
+      }
+    } else if (targetParticipant) {
+      // No screen share - show dominant speaker or target participant
       const targetVideoEl = getVideoElement(targetParticipant.id);
       const hasVideo = targetVideoEl && hasValidVideo(targetParticipant.id);
 
@@ -293,9 +336,11 @@ export const useAutoPictureInPicture = ({
     animationFrameRef.current = requestAnimationFrame(renderPiPFrame);
   }, [
     isPiPActive,
+    screenShareParticipantId,
     targetParticipant,
     localParticipant,
     getVideoElement,
+    getScreenShareVideoElement,
     hasValidVideo,
     drawVideoFrame,
     drawAvatar
