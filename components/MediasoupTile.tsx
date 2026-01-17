@@ -5,6 +5,7 @@ import { Mic, MicOff, VideoOff } from "lucide-react";
 
 interface MediasoupTileProps {
   stream?: MediaStream;
+  participantId?: string; // ✅ NEW - Required for PiP to find video element
   participantName: string;
   participantImage?: string;
   isLocal?: boolean;
@@ -14,6 +15,7 @@ interface MediasoupTileProps {
 
 const MediasoupTile = ({
   stream,
+  participantId,
   participantName,
   participantImage,
   isLocal,
@@ -158,6 +160,7 @@ const MediasoupTile = ({
         autoPlay
         playsInline
         muted={isLocal}
+        data-peer-id={participantId} // ✅ CRITICAL: Required for PiP to find this video element
         className={`w-full h-full object-cover transition-opacity duration-300 ${
           hasVideo ? "opacity-100" : "opacity-0 absolute"
         } ${isLocal ? "scale-x-[-1]" : ""}`}
