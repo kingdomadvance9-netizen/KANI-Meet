@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { PictureInPicture2 } from "lucide-react";
 import MediasoupTile from "./MediasoupTile";
+import DraggablePiPButton from "./DraggablePiPButton";
 import { useMediasoupContext } from "@/contexts/MediasoupContext";
+import { useAutoPictureInPicture } from "@/hooks/useAutoPictureInPicture";
+import { useDominantSpeaker } from "@/hooks/useDominantSpeaker";
 
 interface Participant {
   id: string;
   name: string;
   imageUrl?: string;
   isHost?: boolean;
+  isVideoPaused?: boolean;
 }
 
 interface GridLayoutProps {
@@ -24,7 +27,6 @@ const GridLayout = ({
   remoteStreams,
   localStream,
 }: GridLayoutProps) => {
-  // ✅ Extract screen share tracking and local screen share from context
   const { screenShareStreams, localScreenStream, isScreenSharing } =
     useMediasoupContext();
   const { user } = useUser();
@@ -32,6 +34,7 @@ const GridLayout = ({
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1024
   );
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => setScreenWidth(window.innerWidth);
@@ -40,9 +43,46 @@ const GridLayout = ({
   }, []);
 
   const isMobile = screenWidth < 1024;
-  const [localVideoEl, setLocalVideoEl] = useState<HTMLVideoElement | null>(
-    null
-  );
+
+  // Local participant info
+  const localParticipant = {
+    id: user?.id || "local",
+    name: user?.fullName || user?.firstName || "You",
+    imageUrl: user?.imageUrl,
+  };
+
+  // Dominant speaker detection
+  const { dominantSpeakerId } = useDominantSpeaker({
+    participants,
+    remoteStreams,
+    localStream,
+    localParticipantId: user?.id,
+  });
+
+  // Screen share participant ID
+  const screenShareParticipantId = screenShareStreams.size > 0
+    ? Array.from(screenShareStreams)[0]
+    : null;
+
+  // PiP hook with Google Meet behavior
+  const { enterPiP, exitPiP, isPiPActive, isPiPSupported, canActivate, canActivateReason, isAutoActivateEnabled } = useAutoPictureInPicture({
+    participants,
+    localParticipant,
+    dominantSpeakerId,
+    screenShareParticipantId,
+    remoteStreams,
+    localStream,
+    enabled: true,
+  });
+
+  // Toggle PiP handler for the draggable button
+  const handleTogglePiP = useCallback(async () => {
+    if (isPiPActive) {
+      await exitPiP();
+    } else {
+      await enterPiP();
+    }
+  }, [isPiPActive, enterPiP, exitPiP]);
 
   // Get all screen share streams for prominent display (including local)
   const screenShares = Array.from(screenShareStreams)
@@ -67,7 +107,7 @@ const GridLayout = ({
   }
 
   return (
-    <div className="w-full h-full overflow-hidden">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden">
       {screenShares.length > 0 ? (
         // Layout when screen share is active
         <div className={isMobile ? "flex flex-col" : "flex h-full"}>
@@ -85,6 +125,7 @@ const GridLayout = ({
               >
                 <MediasoupTile
                   stream={stream}
+                  participantId={`${userId}-screen`}
                   participantName={`${participant?.name || "Unknown"}'s Screen`}
                   participantImage={participant?.imageUrl}
                   isHost={participant?.isHost}
@@ -107,10 +148,10 @@ const GridLayout = ({
               {/* 1. LOCAL PREVIEW (YOU) */}
               <MediasoupTile
                 stream={localStream || undefined}
+                participantId={user?.id || "local"}
                 participantName={user?.fullName || user?.firstName || "You"}
                 participantImage={user?.imageUrl}
                 isLocal
-                onVideoElement={setLocalVideoEl}
               />
 
               {/* 2. REMOTE PARTICIPANTS (Camera streams) */}
@@ -118,30 +159,11 @@ const GridLayout = ({
                 .filter((p) => p.id !== user?.id)
                 .map((participant) => {
                   const stream = remoteStreams.get(participant.id);
-
-                  if (!stream) {
-                    console.log(
-                      "⚠️ No stream found for participant:",
-                      participant.id,
-                      participant.name
-                    );
-                    console.log(
-                      "📋 Available stream keys:",
-                      Array.from(remoteStreams.keys())
-                    );
-                  } else {
-                    console.log(
-                      "✅ Stream found for participant:",
-                      participant.id,
-                      "tracks:",
-                      stream.getTracks().length
-                    );
-                  }
-
                   return (
                     <MediasoupTile
                       key={participant.id}
                       stream={stream}
+                      participantId={participant.id}
                       participantName={participant.name}
                       participantImage={participant.imageUrl}
                       isHost={participant.isHost}
@@ -163,6 +185,7 @@ const GridLayout = ({
             {/* 1. LOCAL PREVIEW (YOU) */}
             <MediasoupTile
               stream={localStream || undefined}
+              participantId={user?.id || "local"}
               participantName={user?.fullName || user?.firstName || "You"}
               participantImage={user?.imageUrl}
               isLocal
@@ -173,30 +196,11 @@ const GridLayout = ({
               .filter((p) => p.id !== user?.id)
               .map((participant) => {
                 const stream = remoteStreams.get(participant.id);
-
-                if (!stream) {
-                  console.log(
-                    "⚠️ No stream found for participant:",
-                    participant.id,
-                    participant.name
-                  );
-                  console.log(
-                    "📋 Available stream keys:",
-                    Array.from(remoteStreams.keys())
-                  );
-                } else {
-                  console.log(
-                    "✅ Stream found for participant:",
-                    participant.id,
-                    "tracks:",
-                    stream.getTracks().length
-                  );
-                }
-
                 return (
                   <MediasoupTile
                     key={participant.id}
                     stream={stream}
+                    participantId={participant.id}
                     participantName={participant.name}
                     participantImage={participant.imageUrl}
                     isHost={participant.isHost}
@@ -207,49 +211,16 @@ const GridLayout = ({
         </div>
       )}
 
-      <div className="fixed top-4 right-4 z-50">
-        <button
-          onClick={async () => {
-            try {
-              if (!localVideoEl) return;
-              // If already in PiP, exit. Use feature-checks instead of any-casts where possible.
-              const pipElement = (
-                document as Document & { pictureInPictureElement?: Element }
-              ).pictureInPictureElement;
-              if (pipElement === localVideoEl) {
-                // Some browsers expose exitPictureInPicture on document
-                // Use a runtime check to call it when available
-                const exitPiP = (document as any).exitPictureInPicture;
-                if (typeof exitPiP === "function") {
-                  await exitPiP();
-                }
-                return;
-              }
-
-              // Request PiP on the video element if supported
-              const requestPiP = (
-                localVideoEl as HTMLVideoElement & {
-                  requestPictureInPicture?: () => Promise<PictureInPictureWindow | void>;
-                }
-              ).requestPictureInPicture;
-              if (typeof requestPiP === "function") {
-                await localVideoEl.play().catch(() => {});
-                await requestPiP.call(localVideoEl);
-              } else {
-                console.warn(
-                  "Picture-in-Picture not supported on this browser"
-                );
-              }
-            } catch (err) {
-              console.error("PiP error", err);
-            }
-          }}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-600/90 hover:bg-blue-700 transition-all shadow-xl"
-          title={localVideoEl ? "Toggle Picture-in-Picture" : "No local video"}
-        >
-          <PictureInPicture2 className="text-white w-5 h-5" />
-        </button>
-      </div>
+      {/* Draggable PiP Button on the video stage */}
+      <DraggablePiPButton
+        onTogglePiP={handleTogglePiP}
+        isPiPActive={isPiPActive}
+        isPiPSupported={isPiPSupported}
+        canActivate={canActivate}
+        canActivateReason={canActivateReason}
+        isAutoActivateEnabled={isAutoActivateEnabled}
+        containerRef={containerRef as React.RefObject<HTMLElement>}
+      />
     </div>
   );
 };
