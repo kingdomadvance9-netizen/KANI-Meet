@@ -4,10 +4,10 @@ import React, { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Grace Meet",
+  title: "KANI MEET",
   description: "Video Calling App",
   icons: {
-    icon: "/icons/white-logo.png",
+    icon: "/icons/KANILOGO-no-bg.png",
   },
 };
 

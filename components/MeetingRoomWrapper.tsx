@@ -6,7 +6,7 @@ const notifyUser = () => {
   if ("Notification" in window && Notification.permission === "granted") {
     const notification = new Notification("Meeting Active!", {
       body: "Click to return to your Custom Meet stream.",
-      icon: "/icons/Gm-White-logo.png",
+      icon: "/icons/KANILOGO-no-bg.png",
       tag: "meet-return-notification",
     });
     notification.onclick = function () {
@@ -49,7 +49,7 @@ const MeetingRoomWrapper = ({
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: "Active Meeting",
-        artist: "Grace Meet",
+        artist: "KANI MEET",
       });
       navigator.mediaSession.playbackState = "playing";
 

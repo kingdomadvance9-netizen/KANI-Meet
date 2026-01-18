@@ -5,10 +5,10 @@ import React, { ReactNode } from "react";
 
 
 export const metadata: Metadata = {
-  title: "Grace Meet",
+  title: "KANI MEET",
   description: "Video Calling App",
   icons: {
-    icon: '/icons/white-logo.png'
+    icon: '/icons/KANILOGO-no-bg.png'
   }
 };
 
