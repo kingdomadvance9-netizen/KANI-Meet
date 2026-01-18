@@ -10,10 +10,10 @@ import { MediasoupProvider } from "@/contexts/MediasoupContext";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Grace Meet",
+  title: "KANI MEET",
   description: "Video Calling App",
   icons: {
-    icon: "/icons/white-logo.png",
+    icon: "/icons/KANILOGO-no-bg.png",
   },
 };
 
@@ -28,14 +28,28 @@ export default function RootLayout({
         appearance={{
           layout: {
             socialButtonsVariant: "iconButton",
-            logoImageUrl: "/icons/Gm-White-logo.png",
+            logoImageUrl: "/icons/KANILOGO-no-bg.png",
           },
           variables: {
-            colorText: "#fff",
-            colorPrimary: "#b93140",
-            colorBackground: "#1C1F2E",
-            colorInputBackground: "#252A41",
-            colorInputText: "#fff",
+            /* Text */
+            colorText: "#FFFFFF",
+
+            /* Primary action (buttons, focus, links highlight) */
+            colorPrimary: "#C9A24D", // KANI Gold
+
+            /* Backgrounds */
+            colorBackground: "#0B0B0B", // main background
+            colorInputBackground: "#1A1A1A", // inputs / fields
+            colorModalBackdrop: "rgba(0,0,0,0.8)",
+
+            /* Inputs */
+            colorInputText: "#FFFFFF",
+
+            /* Muted / secondary text */
+            colorTextSecondary: "#BDBDBD",
+
+            /* Danger */
+            colorDanger: "#E74C3C",
           },
         }}
         localization={{
@@ -44,14 +58,14 @@ export default function RootLayout({
             ...enUS.signIn,
             start: {
               ...(enUS.signIn?.start ?? {}),
-              title: "Grace Meet",
+              title: "KANI MEET",
             },
           },
           signUp: {
             ...enUS.signUp,
             start: {
               ...(enUS.signUp?.start ?? {}),
-              title: "Grace Meet",
+              title: "KANI MEET",
             },
           },
         }}
