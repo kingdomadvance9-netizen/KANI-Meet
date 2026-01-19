@@ -32,7 +32,11 @@ export const MediasoupProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080", {
-        transports: ["websocket"],
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5,
     });
 
     socketInstance.on("connect", async () => {
