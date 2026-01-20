@@ -10,6 +10,7 @@ interface MediasoupTileProps {
   participantImage?: string;
   isLocal?: boolean;
   isHost?: boolean;
+  isMobile?: boolean;
   onVideoElement?: Dispatch<SetStateAction<HTMLVideoElement | null>>;
 }
 
@@ -20,6 +21,7 @@ const MediasoupTile = ({
   participantImage,
   isLocal,
   isHost,
+  isMobile,
   onVideoElement,
 }: MediasoupTileProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -115,8 +117,9 @@ const MediasoupTile = ({
 
     /** 📊 Audio activity detection */
     try {
-      audioContext = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
+      audioContext = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
 
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
@@ -144,11 +147,11 @@ const MediasoupTile = ({
 
   return (
     <div
-      className={`relative aspect-video bg-[#1C1F2E] rounded-2xl overflow-hidden border-2 transition-all ${
+      className={`relative bg-[#1C1F2E] rounded-2xl overflow-hidden border-2 transition-all ${
         isTalking
           ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
           : "border-white/5"
-      }`}
+      } ${isMobile ? "h-44" : "aspect-video"}`}
     >
       {!isLocal && (
         <audio ref={audioRef} autoPlay playsInline className="hidden" />
@@ -177,10 +180,12 @@ const MediasoupTile = ({
               <img
                 src={participantImage}
                 alt={participantName}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-white/10 relative z-10"
+                className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-white/10 relative z-10 ${isMobile ? "w-14 h-14" : ""}`}
               />
             ) : (
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-dark-3 flex items-center justify-center text-xl sm:text-2xl font-bold border border-white/10 relative z-10">
+              <div
+                className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-dark-3 flex items-center justify-center text-xl sm:text-2xl font-bold border border-white/10 relative z-10 ${isMobile ? "w-14 h-14" : ""}`}
+              >
                 {participantName.charAt(0).toUpperCase()}
               </div>
             )}

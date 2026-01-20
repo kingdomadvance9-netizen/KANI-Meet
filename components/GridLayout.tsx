@@ -32,7 +32,7 @@ const GridLayout = ({
   const { user } = useUser();
 
   const [screenWidth, setScreenWidth] = useState(
-    typeof window !== "undefined" ? window.innerWidth : 1024
+    typeof window !== "undefined" ? window.innerWidth : 1024,
   );
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -60,12 +60,19 @@ const GridLayout = ({
   });
 
   // Screen share participant ID
-  const screenShareParticipantId = screenShareStreams.size > 0
-    ? Array.from(screenShareStreams)[0]
-    : null;
+  const screenShareParticipantId =
+    screenShareStreams.size > 0 ? Array.from(screenShareStreams)[0] : null;
 
   // PiP hook with Google Meet behavior
-  const { enterPiP, exitPiP, isPiPActive, isPiPSupported, canActivate, canActivateReason, isAutoActivateEnabled } = useAutoPictureInPicture({
+  const {
+    enterPiP,
+    exitPiP,
+    isPiPActive,
+    isPiPSupported,
+    canActivate,
+    canActivateReason,
+    isAutoActivateEnabled,
+  } = useAutoPictureInPicture({
     participants,
     localParticipant,
     dominantSpeakerId,
@@ -129,6 +136,7 @@ const GridLayout = ({
                   participantName={`${participant?.name || "Unknown"}'s Screen`}
                   participantImage={participant?.imageUrl}
                   isHost={participant?.isHost}
+                  isMobile={isMobile}
                 />
               </div>
             ))}
@@ -152,6 +160,7 @@ const GridLayout = ({
                 participantName={user?.fullName || user?.firstName || "You"}
                 participantImage={user?.imageUrl}
                 isLocal
+                isMobile={isMobile}
               />
 
               {/* 2. REMOTE PARTICIPANTS (Camera streams) */}
@@ -167,6 +176,7 @@ const GridLayout = ({
                       participantName={participant.name}
                       participantImage={participant.imageUrl}
                       isHost={participant.isHost}
+                      isMobile={isMobile}
                     />
                   );
                 })}
@@ -189,6 +199,7 @@ const GridLayout = ({
               participantName={user?.fullName || user?.firstName || "You"}
               participantImage={user?.imageUrl}
               isLocal
+              isMobile={isMobile}
             />
 
             {/* 2. REMOTE PARTICIPANTS (Camera streams) */}
@@ -204,6 +215,7 @@ const GridLayout = ({
                     participantName={participant.name}
                     participantImage={participant.imageUrl}
                     isHost={participant.isHost}
+                    isMobile={isMobile}
                   />
                 );
               })}
