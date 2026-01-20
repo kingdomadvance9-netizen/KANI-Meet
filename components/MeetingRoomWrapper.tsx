@@ -31,17 +31,38 @@ const MeetingRoomWrapper = ({
 
   const requestWakeLock = async () => {
     try {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        // Page not visible - don't request wake lock now
+        return;
+      }
+
       if ("wakeLock" in navigator) {
         if (wakeLockRef.current) {
-          await wakeLockRef.current.release();
+          try {
+            await wakeLockRef.current.release();
+          } catch (e) {
+            // ignore release errors
+          }
         }
+
         wakeLockRef.current = await navigator.wakeLock.request("screen");
         wakeLockRef.current.addEventListener("release", () => {
-          if (!document.hidden) requestWakeLock();
+          // Only try to re-acquire if the page is still visible
+          if (
+            typeof document !== "undefined" &&
+            document.visibilityState === "visible"
+          ) {
+            requestWakeLock();
+          }
         });
       }
-    } catch (e) {
-      console.error("Wake Lock failed to acquire:", e);
+    } catch (e: any) {
+      // NotAllowedError occurs when requesting a wake lock while the page
+      // isn't visible or when the UA denies the request. Log and continue.
+      console.warn("Wake Lock failed to acquire:", e?.name || e?.message || e);
     }
   };
 
@@ -55,14 +76,14 @@ const MeetingRoomWrapper = ({
 
       navigator.mediaSession.setActionHandler("play", () => {
         const audio = document.getElementById(
-          "background-audio-trick"
+          "background-audio-trick",
         ) as HTMLAudioElement;
         audio?.play().catch(() => {});
         navigator.mediaSession.playbackState = "playing";
       });
       navigator.mediaSession.setActionHandler("pause", () => {
         const audio = document.getElementById(
-          "background-audio-trick"
+          "background-audio-trick",
         ) as HTMLAudioElement;
         audio?.pause();
         navigator.mediaSession.playbackState = "paused";
@@ -70,7 +91,7 @@ const MeetingRoomWrapper = ({
     }
 
     let audio = document.getElementById(
-      "background-audio-trick"
+      "background-audio-trick",
     ) as HTMLAudioElement;
     if (!audio) {
       audio = document.createElement("audio");
@@ -84,7 +105,7 @@ const MeetingRoomWrapper = ({
     audio.play().catch((error) => {
       console.warn(
         "Autoplay blocked, background audio may be restricted.",
-        error
+        error,
       );
     });
   };
