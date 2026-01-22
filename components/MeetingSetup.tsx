@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "./ui/button";
-import { Video, VideoOff, Mic, MicOff } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Volume2, Sparkles } from "lucide-react";
+import Image from "next/image";
 
 interface JoinPreference {
   audio: boolean;
@@ -11,14 +12,21 @@ interface JoinPreference {
 
 const STORAGE_KEY = "meeting-join-preference";
 
+type AudioOption = "computer" | "phone" | "room" | "none";
+
 const MeetingSetup = ({
   setIsSetupComplete,
 }: {
   setIsSetupComplete: (value: boolean) => void;
 }) => {
-  const [joinWithMediaOff, setJoinWithMediaOff] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [audioOption, setAudioOption] = useState<AudioOption>("none");
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [selectedMicrophone, setSelectedMicrophone] = useState<string>("");
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string>("");
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -44,15 +52,33 @@ const MeetingSetup = ({
   }, []);
 
   /**
+   * Enumerate media devices
+   */
+  const enumerateDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter((d) => d.kind === "audioinput");
+      const audioOutputs = devices.filter((d) => d.kind === "audiooutput");
+
+      setMicrophones(audioInputs);
+      setSpeakers(audioOutputs);
+
+      // Set default selections
+      if (audioInputs.length > 0 && !selectedMicrophone) {
+        setSelectedMicrophone(audioInputs[0].deviceId);
+      }
+      if (audioOutputs.length > 0 && !selectedSpeaker) {
+        setSelectedSpeaker(audioOutputs[0].deviceId);
+      }
+    } catch (error) {
+      console.error("Failed to enumerate devices:", error);
+    }
+  }, [selectedMicrophone, selectedSpeaker]);
+
+  /**
    * Request media permissions and show preview
    */
   const startMediaPreview = useCallback(async () => {
-    // Don't request if joining with media off
-    if (joinWithMediaOff) {
-      stopAllTracks();
-      return;
-    }
-
     setIsLoading(true);
     setPermissionError(null);
 
@@ -71,6 +97,7 @@ const MeetingSetup = ({
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          deviceId: selectedMicrophone ? { exact: selectedMicrophone } : undefined,
         },
       });
 
@@ -82,10 +109,20 @@ const MeetingSetup = ({
 
       streamRef.current = stream;
 
-      // Attach to video element
+      // Attach to video element and play
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch (playError) {
+          console.warn("Video play failed:", playError);
+        }
       }
+
+      setIsCameraOn(true);
+
+      // Enumerate devices after permission granted
+      await enumerateDevices();
 
       console.log("✅ Media preview started:", {
         video: stream.getVideoTracks().length > 0,
@@ -117,26 +154,34 @@ const MeetingSetup = ({
         setIsLoading(false);
       }
     }
-  }, [joinWithMediaOff, stopAllTracks]);
+  }, [stopAllTracks, selectedMicrophone, enumerateDevices]);
 
   /**
-   * Handle checkbox toggle
-   * Clean up tracks immediately when enabling "join with media off"
+   * Toggle camera on/off
    */
-  const handleToggleChange = useCallback(
-    (checked: boolean) => {
-      setJoinWithMediaOff(checked);
+  const toggleCamera = useCallback(() => {
+    console.log("🎥 Toggle camera - current state:", isCameraOn);
+    if (isCameraOn) {
+      stopAllTracks();
+      setIsCameraOn(false);
+      console.log("🎥 Camera turned OFF");
+    } else {
+      console.log("🎥 Starting camera...");
+      startMediaPreview();
+    }
+  }, [isCameraOn, stopAllTracks, startMediaPreview]);
 
-      if (checked) {
-        // Immediately stop all tracks when enabling "join with media off"
-        stopAllTracks();
-        setPermissionError(null);
-        console.log("🔇 Join with media OFF enabled - all tracks stopped");
-      }
-      // If unchecking, the useEffect will handle starting the preview
-    },
-    [stopAllTracks]
-  );
+  /**
+   * Handle microphone mute toggle
+   */
+  const toggleMicrophone = useCallback(() => {
+    if (streamRef.current) {
+      const audioTracks = streamRef.current.getAudioTracks();
+      audioTracks.forEach((track) => {
+        track.enabled = !track.enabled;
+      });
+    }
+  }, []);
 
   /**
    * Handle join meeting
@@ -145,8 +190,8 @@ const MeetingSetup = ({
   const handleJoinMeeting = useCallback(() => {
     // Save user preference to localStorage
     const preference: JoinPreference = {
-      audio: !joinWithMediaOff,
-      video: !joinWithMediaOff,
+      audio: audioOption !== "none",
+      video: isCameraOn,
     };
 
     try {
@@ -162,16 +207,36 @@ const MeetingSetup = ({
 
     // Proceed to meeting room
     setIsSetupComplete(true);
-  }, [joinWithMediaOff, stopAllTracks, setIsSetupComplete]);
+  }, [audioOption, isCameraOn, stopAllTracks, setIsSetupComplete]);
 
   /**
-   * Effect: Manage media lifecycle based on checkbox state
+   * Handle cancel
+   */
+  const handleCancel = useCallback(() => {
+    stopAllTracks();
+    // Navigate back or close
+    window.history.back();
+  }, [stopAllTracks]);
+
+  /**
+   * Effect: Start media preview on mount
    */
   useEffect(() => {
-    if (!joinWithMediaOff) {
-      startMediaPreview();
+    enumerateDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Effect: Ensure video plays when camera is turned on
+   */
+  useEffect(() => {
+    if (isCameraOn && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch((err) => {
+        console.warn("Video autoplay prevented:", err);
+      });
     }
-  }, [joinWithMediaOff, startMediaPreview]);
+  }, [isCameraOn]);
 
   /**
    * Effect: Cleanup on unmount
@@ -191,128 +256,270 @@ const MeetingSetup = ({
    * Get current track status for display
    */
   const hasVideoTrack = streamRef.current?.getVideoTracks().length ?? 0 > 0;
-  const hasAudioTrack = streamRef.current?.getAudioTracks().length ?? 0 > 0;
+  const hasAudioTrack =
+    streamRef.current?.getAudioTracks().some((track) => track.enabled) ?? false;
+  const isMicrophoneMuted = !hasAudioTrack && isCameraOn;
 
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center gap-6 text-white px-4">
-      <div className="max-w-2xl w-full space-y-4">
-        <h1 className="text-center text-3xl font-bold text-white">Setup</h1>
-        <p className="text-center text-gray-400 text-sm">
-          Configure your audio and video before joining
-        </p>
+    <div className="flex h-screen w-full flex-col bg-dark-2 text-white overflow-auto md:overflow-hidden">
+      {/* Header with Logo and Meeting Info */}
+      <div className="flex flex-col items-center pt-4 md:pt-8 pb-3 md:pb-6 gap-2 md:gap-4">
+        <Image
+          src="/icons/KANILOGO-no-bg.png"
+          alt="KANI Logo"
+          width={60}
+          height={60}
+          className="object-contain md:w-[80px] md:h-[80px]"
+        />
+        <div className="text-center">
+          <h1 className="text-lg md:text-2xl font-semibold mb-1 md:mb-2">KANI Meeting</h1>
+          <p className="text-xs md:text-sm text-gray-400">
+            <span className="inline-flex items-center gap-2">
+              <span>
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
+              <span>•</span>
+              <span>
+                {new Date().toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </span>
+          </p>
+        </div>
       </div>
 
-      {/* 🖼️ Video Preview */}
-      <div className="relative w-full max-w-[640px] aspect-video bg-dark-1 rounded-xl overflow-hidden border border-white/10 shadow-2xl">
-        {!joinWithMediaOff && !permissionError ? (
-          <>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover scale-x-[-1]"
-            />
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-dark-1/80 backdrop-blur-sm">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-gray-300">Starting preview...</p>
+      {/* Main Content - Two Column Layout (stacks on mobile) */}
+      <div className="flex-1 flex flex-col md:flex-row gap-4 md:gap-6 px-4 md:px-6 pb-4 md:pb-6 md:overflow-hidden">
+        {/* Left Column - Video Preview */}
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
+          <div className="relative flex-1 min-h-[200px] md:min-h-0 bg-dark-1 rounded-lg overflow-hidden border border-white/10 aspect-video md:aspect-auto">
+            {isCameraOn && !permissionError ? (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover scale-x-[-1]"
+                  onLoadedMetadata={() => {
+                    console.log("📹 Video metadata loaded");
+                  }}
+                  onPlay={() => {
+                    console.log("▶️ Video started playing");
+                  }}
+                />
+                {isLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-dark-1/80 backdrop-blur-sm z-10">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-10 h-10 md:w-12 md:h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-xs md:text-sm text-gray-300">Starting preview...</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 px-4">
+                <VideoOff size={40} className="text-gray-500 md:w-12 md:h-12" />
+                <div className="text-center">
+                  <p className="text-sm md:text-base text-gray-300 font-medium">
+                    Your camera is turned off
+                  </p>
+                  {permissionError && (
+                    <p className="text-xs text-red-400 mt-2">{permissionError}</p>
+                  )}
                 </div>
               </div>
             )}
-            {/* Media Status Indicators */}
-            <div className="absolute bottom-4 left-4 flex gap-2">
-              <div
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
-                  hasVideoTrack
-                    ? "bg-green-500/20 text-green-400"
-                    : "bg-red-500/20 text-red-400"
-                }`}
-              >
-                {hasVideoTrack ? <Video size={16} /> : <VideoOff size={16} />}
-                <span className="text-xs font-medium">
-                  {hasVideoTrack ? "Video On" : "Video Off"}
-                </span>
-              </div>
-              <div
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
-                  hasAudioTrack
-                    ? "bg-green-500/20 text-green-400"
-                    : "bg-red-500/20 text-red-400"
-                }`}
-              >
-                {hasAudioTrack ? <Mic size={16} /> : <MicOff size={16} />}
-                <span className="text-xs font-medium">
-                  {hasAudioTrack ? "Mic On" : "Mic Off"}
-                </span>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
-            <div className="w-20 h-20 rounded-full bg-dark-3 flex items-center justify-center">
-              <VideoOff size={40} className="text-gray-500" />
-            </div>
-            <div>
-              <p className="text-gray-300 font-medium mb-1">
-                {joinWithMediaOff ? "Camera & Microphone Off" : "No Preview"}
-              </p>
-              <p className="text-gray-500 text-sm">
-                {joinWithMediaOff
-                  ? "You will join the meeting with audio and video disabled"
-                  : permissionError || "Enable preview to test your setup"}
-              </p>
-            </div>
           </div>
-        )}
-      </div>
 
-      {/* Permission Error Alert */}
-      {permissionError && !joinWithMediaOff && (
-        <div className="max-w-[640px] w-full p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center mt-0.5">
-              <span className="text-red-400 text-xs">!</span>
-            </div>
-            <div>
-              <p className="text-red-400 font-medium text-sm mb-1">
-                Permission Required
-              </p>
-              <p className="text-red-300/80 text-xs">{permissionError}</p>
-            </div>
+          {/* Camera Controls */}
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+            <button
+              onClick={toggleCamera}
+              className="flex items-center gap-2 px-3 md:px-4 py-2 bg-dark-3 hover:bg-dark-4 rounded-lg transition-colors text-sm"
+            >
+              {isCameraOn ? (
+                <Video size={16} className="text-white md:w-[18px] md:h-[18px]" />
+              ) : (
+                <VideoOff size={16} className="text-white md:w-[18px] md:h-[18px]" />
+              )}
+              <span className="text-xs md:text-sm">
+                {isCameraOn ? "Camera on" : "Camera off"}
+              </span>
+            </button>
+            <button className="flex items-center gap-2 px-3 md:px-4 py-2 bg-dark-3 hover:bg-dark-4 rounded-lg transition-colors text-sm">
+              <Sparkles size={16} className="text-white md:w-[18px] md:h-[18px]" />
+              <span className="text-xs md:text-sm">Effects and avatars</span>
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Controls */}
-      <div className="flex flex-col items-center gap-4">
-        <label className="flex items-center gap-3 cursor-pointer group">
-          <div className="relative">
+        {/* Right Column - Audio Settings */}
+        <div className="w-full md:w-[400px] flex flex-col gap-3 md:gap-4 md:overflow-y-auto">
+          {/* Computer Audio Option */}
+          <label
+            className={`flex items-center gap-3 p-3 md:p-4 rounded-lg border cursor-pointer transition-all ${
+              audioOption === "computer"
+                ? "border-blue-1 bg-blue-1/10"
+                : "border-white/10 hover:border-white/20"
+            }`}
+          >
             <input
-              type="checkbox"
-              className="peer w-5 h-5 accent-red-2 cursor-pointer"
-              checked={joinWithMediaOff}
-              onChange={(e) => handleToggleChange(e.target.checked)}
+              type="radio"
+              name="audio-option"
+              value="computer"
+              checked={audioOption === "computer"}
+              onChange={() => setAudioOption("computer")}
+              className="w-4 h-4 md:w-5 md:h-5 accent-blue-1 flex-shrink-0"
             />
-          </div>
-          <span className="text-base font-medium group-hover:text-gray-200 transition-colors">
-            Join with audio/video off
-          </span>
-        </label>
+            <span className="text-sm md:text-base font-medium">Computer audio</span>
+          </label>
 
-        <Button
-          className="rounded-lg bg-red-2 px-8 py-3 text-base font-semibold hover:bg-red-3 transition-colors shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleJoinMeeting}
-          disabled={isLoading}
+          {/* Audio Device Selectors (shown when Computer audio is selected) */}
+          {audioOption === "computer" && (
+            <div className="flex flex-col gap-3 pl-4 md:pl-8">
+              {/* Microphone */}
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-1 md:gap-2 flex-1 min-w-0">
+                  <button
+                    onClick={toggleMicrophone}
+                    className="p-2 hover:bg-dark-3 rounded transition-colors flex-shrink-0"
+                  >
+                    {isMicrophoneMuted ? (
+                      <MicOff size={16} className="text-gray-400 md:w-[18px] md:h-[18px]" />
+                    ) : (
+                      <Mic size={16} className="text-white md:w-[18px] md:h-[18px]" />
+                    )}
+                  </button>
+                  <select
+                    value={selectedMicrophone}
+                    onChange={(e) => setSelectedMicrophone(e.target.value)}
+                    className="flex-1 min-w-0 bg-dark-1 border border-white/10 rounded px-2 md:px-3 py-2 text-xs md:text-sm text-white focus:outline-none focus:border-blue-1"
+                  >
+                    {microphones.map((mic) => (
+                      <option key={mic.deviceId} value={mic.deviceId}>
+                        {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button className="p-2 hover:bg-dark-3 rounded transition-colors flex-shrink-0 hidden md:block">
+                  <span className="text-xs text-gray-400">⚙</span>
+                </button>
+              </div>
+
+              {/* Speaker */}
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-1 md:gap-2 flex-1 min-w-0">
+                  <div className="p-2 flex-shrink-0">
+                    <Volume2 size={16} className="text-white md:w-[18px] md:h-[18px]" />
+                  </div>
+                  <select
+                    value={selectedSpeaker}
+                    onChange={(e) => setSelectedSpeaker(e.target.value)}
+                    className="flex-1 min-w-0 bg-dark-1 border border-white/10 rounded px-2 md:px-3 py-2 text-xs md:text-sm text-white focus:outline-none focus:border-blue-1"
+                  >
+                    {speakers.map((speaker) => (
+                      <option key={speaker.deviceId} value={speaker.deviceId}>
+                        {speaker.label || `Speaker ${speaker.deviceId.slice(0, 8)}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Phone Audio Option */}
+          <label
+            className={`flex items-center gap-3 p-3 md:p-4 rounded-lg border cursor-pointer transition-all ${
+              audioOption === "phone"
+                ? "border-blue-1 bg-blue-1/10"
+                : "border-white/10 hover:border-white/20"
+            }`}
+          >
+            <input
+              type="radio"
+              name="audio-option"
+              value="phone"
+              checked={audioOption === "phone"}
+              onChange={() => setAudioOption("phone")}
+              className="w-4 h-4 md:w-5 md:h-5 accent-blue-1 flex-shrink-0"
+            />
+            <span className="text-sm md:text-base font-medium">Phone audio</span>
+          </label>
+
+          {/* Room Audio Option */}
+          <label
+            className={`flex items-center gap-3 p-3 md:p-4 rounded-lg border cursor-pointer transition-all ${
+              audioOption === "room"
+                ? "border-blue-1 bg-blue-1/10"
+                : "border-white/10 hover:border-white/20"
+            }`}
+          >
+            <input
+              type="radio"
+              name="audio-option"
+              value="room"
+              checked={audioOption === "room"}
+              onChange={() => setAudioOption("room")}
+              className="w-4 h-4 md:w-5 md:h-5 accent-blue-1 flex-shrink-0"
+            />
+            <span className="text-sm md:text-base font-medium">Room audio</span>
+          </label>
+
+          {/* Don't Use Audio Option */}
+          <label
+            className={`flex items-center gap-3 p-3 md:p-4 rounded-lg border cursor-pointer transition-all ${
+              audioOption === "none"
+                ? "border-blue-1 bg-blue-1/10"
+                : "border-white/10 hover:border-white/20"
+            }`}
+          >
+            <input
+              type="radio"
+              name="audio-option"
+              value="none"
+              checked={audioOption === "none"}
+              onChange={() => setAudioOption("none")}
+              className="w-4 h-4 md:w-5 md:h-5 accent-blue-1 flex-shrink-0"
+            />
+            <span className="text-sm md:text-base font-medium">Don&apos;t use audio</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Footer with Buttons */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 md:gap-0 px-4 md:px-6 pb-4 md:pb-6 mt-auto">
+        <a
+          href="#"
+          className="text-blue-1 text-xs md:text-sm hover:underline text-center md:text-left order-2 md:order-1"
+          onClick={(e) => e.preventDefault()}
         >
-          {isLoading ? "Loading..." : "Join Meeting"}
-        </Button>
-
-        <p className="text-xs text-gray-500 text-center max-w-md">
-          Your preference will be saved. You can change audio/video settings
-          after joining.
-        </p>
+          Need help?
+        </a>
+        <div className="flex items-center gap-2 md:gap-3 order-1 md:order-2">
+          <Button
+            onClick={handleCancel}
+            variant="outline"
+            className="flex-1 md:flex-initial px-4 md:px-6 py-2 bg-transparent border-white/20 text-white hover:bg-white/10 rounded-lg text-sm md:text-base"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleJoinMeeting}
+            disabled={isLoading}
+            className="flex-1 md:flex-initial px-4 md:px-6 py-2 bg-red-2 hover:bg-red-3 text-white rounded-lg font-medium text-sm md:text-base"
+          >
+            {isLoading ? "Loading..." : "Join now"}
+          </Button>
+        </div>
       </div>
     </div>
   );
