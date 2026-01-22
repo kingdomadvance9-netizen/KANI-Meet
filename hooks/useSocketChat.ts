@@ -46,7 +46,7 @@ type TypingUser = {
   name: string;
 };
 
-export const useSocketChat = (roomId?: string) => {
+export const useSocketChat = (roomId?: string, isChatOpen?: boolean) => {
   const { user } = useUser();
   const socket = getSocket();
 
@@ -57,8 +57,11 @@ export const useSocketChat = (roomId?: string) => {
   const [pinnedMessage, setPinnedMessage] = useState<SocketChatMessage | null>(
     null
   );
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState<ReceivedMessage[]>([]);
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastReadTimestampRef = useRef<number>(Date.now());
 
   // ----------------------------
   // CONNECT + LISTENERS
@@ -109,6 +112,12 @@ export const useSocketChat = (roomId?: string) => {
         if (prev.some((m) => m.message.id === data.message.id)) return prev;
         return [...prev, data];
       });
+
+      // Track unread messages if chat is closed and message is from someone else
+      if (!isChatOpen && data.message.sender.id !== user?.id) {
+        setUnreadMessages((prev) => [...prev, data]);
+        setUnreadCount((prev) => prev + 1);
+      }
     };
 
     const handleTypingStart = (data: TypingUser) => {
@@ -356,6 +365,20 @@ export const useSocketChat = (roomId?: string) => {
     }, 1500);
   }, [roomId, socket, user]);
 
+  // Mark messages as read when chat is opened
+  const markAsRead = useCallback(() => {
+    setUnreadCount(0);
+    setUnreadMessages([]);
+    lastReadTimestampRef.current = Date.now();
+  }, []);
+
+  // Auto-mark as read when chat is opened
+  useEffect(() => {
+    if (isChatOpen) {
+      markAsRead();
+    }
+  }, [isChatOpen, markAsRead]);
+
   return {
     connected,
     messages,
@@ -365,6 +388,9 @@ export const useSocketChat = (roomId?: string) => {
     selfSocketId,
     pinnedMessage,
     pinMessage,
-    reactToMessage, // ✅ NOW DEFINED
+    reactToMessage,
+    unreadCount,
+    unreadMessages,
+    markAsRead,
   };
 };
