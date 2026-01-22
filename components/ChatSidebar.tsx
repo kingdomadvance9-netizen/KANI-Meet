@@ -79,7 +79,8 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
     pinnedMessage,
     pinMessage,
     reactToMessage,
-  } = useSocketChat(roomId);
+    unreadCount,
+  } = useSocketChat(roomId, open);
 
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<SocketChatMessage | null>(null);
@@ -143,7 +144,14 @@ const ChatSidebar = ({ open, onClose , roomId}: ChatSidebarProps) => {
     >
       {/* HEADER */}
       <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-        <h2 className="text-white font-semibold">Chat</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-white font-semibold">Chat</h2>
+          {unreadCount > 0 && !open && (
+            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
+              {unreadCount}
+            </span>
+          )}
+        </div>
         <button onClick={onClose} className="text-gray-400 hover:text-white">
           <X size={18} />
         </button>
