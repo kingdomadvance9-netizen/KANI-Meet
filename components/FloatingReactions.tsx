@@ -2,89 +2,119 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import twemoji from "twemoji";
 
-type Reaction = { id: string; emoji: string; sessionId?: string | null };
+// ==================== Types ====================
 
-const EMOJI_COLORS: Record<string, string> = {
-  "❤️": "rgba(255, 60, 100, 0.8)",
-  "🔥": "rgba(255, 130, 30, 0.8)",
-  "😂": "rgba(255, 220, 0, 0.85)",
-  "👏": "rgba(100, 200, 255, 0.8)",
+type Reaction = {
+  id: string;
+  emoji: string;
+  sessionId?: string | null;
+  // Physics for this specific reaction instance
+  physics: ReactionPhysics;
 };
 
-function emojiToSvg(e: string): string {
-  const html = twemoji.parse(e, { folder: "svg", ext: ".svg" });
-  const m = html.match(/src="([^\"]+)"/);
-  return m ? m[1] : "";
+type ReactionPhysics = {
+  startX: number;
+  startY: number;
+  driftX: number;
+  driftY: number;
+  rotation: number;
+  scale: number;
+  duration: number;
+};
+
+// ==================== Color Mapping ====================
+
+const EMOJI_GLOW: Record<string, string> = {
+  "❤️": "rgba(255, 60, 100, 0.9)",
+  "🔥": "rgba(255, 130, 30, 0.9)",
+  "😂": "rgba(255, 220, 0, 0.95)",
+  "👏": "rgba(100, 200, 255, 0.85)",
+  "🎉": "rgba(255, 100, 255, 0.85)",
+  "😮": "rgba(100, 255, 200, 0.8)",
+  "😢": "rgba(120, 180, 255, 0.8)",
+  "👍": "rgba(255, 200, 100, 0.85)",
+  "🎈": "rgba(255, 150, 200, 0.85)",
+};
+
+function getEmojiGlow(emoji: string): string {
+  return EMOJI_GLOW[emoji] ?? "rgba(255, 255, 255, 0.6)";
 }
 
-function pickColor(emoji: string) {
-  return EMOJI_COLORS[emoji] ?? "rgba(255,255,255,0.55)";
+// ==================== Utilities ====================
+
+function emojiToSvg(emoji: string): string {
+  const html = twemoji.parse(emoji, { folder: "svg", ext: ".svg" });
+  const match = html.match(/src="([^"]+)"/);
+  return match ? match[1] : "";
 }
 
-function waitForElement(sessionId?: string | null, tries = 10) {
-  return new Promise<HTMLElement | null>((resolve) => {
-    if (!sessionId) return resolve(null);
-    let i = 0;
-    const t = setInterval(() => {
-      const el = document.querySelector(
-        `[data-session-id="${sessionId}"]`
-      ) as HTMLElement | null;
-      if (el) {
-        clearInterval(t);
-        resolve(el);
-      }
-      i++;
-      if (i > tries) {
-        clearInterval(t);
-        resolve(null);
-      }
-    }, 60);
-  });
+/**
+ * Generate randomized physics for natural, varied animations
+ */
+function generatePhysics(): ReactionPhysics {
+  const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1920;
+  const screenHeight =
+    typeof window !== "undefined" ? window.innerHeight : 1080;
+
+  // Randomize horizontal spawn position (centered with variance)
+  const spawnVariance = Math.min(screenWidth * 0.15, 200);
+  const startX = screenWidth / 2 + (Math.random() - 0.5) * spawnVariance;
+  const startY = screenHeight - 80;
+
+  // Horizontal drift (slight left/right movement as it floats)
+  const driftX = (Math.random() - 0.5) * 120;
+
+  // Vertical float distance (how high it goes)
+  const driftY = -(screenHeight * 0.6 + Math.random() * screenHeight * 0.2);
+
+  // Rotation wobble
+  const rotation = (Math.random() - 0.5) * 30;
+
+  // Scale variation (0.9 to 1.2)
+  const scale = 0.9 + Math.random() * 0.3;
+
+  // Duration variation (3s to 4.5s)
+  const duration = 3 + Math.random() * 1.5;
+
+  return { startX, startY, driftX, driftY, rotation, scale, duration };
 }
+
+// ==================== Main Component ====================
 
 export default function FloatingReactions() {
-  const [list, setList] = useState<Reaction[]>([]);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
 
   useEffect(() => {
-    type Detail = { emoji: string; sessionId?: string | null };
-    const handler = (e: CustomEvent<Detail>) => {
-      console.log("[FloatingReactions] spawn-reaction received", e.detail);
-      setList((p) => {
-        const newList = [
-          ...p,
-          {
-            id: crypto.randomUUID(),
-            emoji: e.detail.emoji,
-            sessionId: e.detail.sessionId,
-          },
-        ];
-        console.log("[FloatingReactions] Updated list:", newList);
-        return newList;
-      });
+    type ReactionDetail = { emoji: string; sessionId?: string | null };
+
+    const handler = (e: CustomEvent<ReactionDetail>) => {
+      // Append-only: add new reaction with unique ID and physics
+      setReactions((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          emoji: e.detail.emoji,
+          sessionId: e.detail.sessionId,
+          physics: generatePhysics(),
+        },
+      ]);
     };
 
-    console.log("[FloatingReactions] Event listener attached");
     window.addEventListener("spawn-reaction", handler as EventListener);
-    return () => {
-      console.log("[FloatingReactions] Event listener removed");
+    return () =>
       window.removeEventListener("spawn-reaction", handler as EventListener);
-    };
   }, []);
 
-  const remove = (id: string) => {
-    console.log("[FloatingReactions] Removing reaction:", id);
-    setList((p) => p.filter((r) => r.id !== id));
+  // Auto-remove reactions after animation completes
+  const handleAnimationComplete = (id: string) => {
+    setReactions((prev) => prev.filter((r) => r.id !== id));
   };
 
-  console.log("[FloatingReactions] Rendering with list:", list);
-
-  // Render nothing on server
   if (typeof window === "undefined") return null;
 
-  // Portal to document.body to avoid affecting control bar layout
   return createPortal(
     <div
       style={{
@@ -94,10 +124,16 @@ export default function FloatingReactions() {
         pointerEvents: "none",
         zIndex: 9998,
       }}
+      aria-live="polite"
+      aria-label="Floating reactions"
     >
-      <AnimatePresence initial={false}>
-        {list.map((r) => (
-          <ReactionParticle key={r.id} {...r} onDone={() => remove(r.id)} />
+      <AnimatePresence mode="popLayout">
+        {reactions.map((reaction) => (
+          <ReactionParticle
+            key={reaction.id}
+            reaction={reaction}
+            onComplete={() => handleAnimationComplete(reaction.id)}
+          />
         ))}
       </AnimatePresence>
     </div>,
@@ -105,98 +141,93 @@ export default function FloatingReactions() {
   );
 }
 
+// ==================== Individual Reaction Particle ====================
+
 function ReactionParticle({
-  emoji,
-  sessionId,
-  onDone,
-}: Reaction & { onDone: () => void }) {
+  reaction,
+  onComplete,
+}: {
+  reaction: Reaction;
+  onComplete: () => void;
+}) {
+  const { emoji, physics } = reaction;
   const svg = useMemo(() => emojiToSvg(emoji), [emoji]);
-  const glow = pickColor(emoji);
+  const glow = getEmojiGlow(emoji);
 
-  const controls = useAnimation();
-  const startX = window.innerWidth / 2 + (Math.random() - 0.5) * 140;
-  const startY = window.innerHeight - 120;
+  const { startX, startY, driftX, driftY, rotation, scale, duration } =
+    physics;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      if (cancelled) return;
-
-      await controls.start({
-        opacity: 1,
-        scale: 1.15,
-        x: startX,
-        y: startY - 36,
-        transition: { duration: 0.38 },
-      });
-
-      // float up
-      await controls.start({
-        x: startX + (Math.random() - 0.5) * 80,
-        y: window.innerHeight - (300 + Math.random() * 200),
-        rotate: (Math.random() - 0.5) * 20,
-        transition: { duration: 1.1, ease: [0.22, 1, 0.36, 1] },
-      });
-
-      // try to find target tile
-      const el = await waitForElement(sessionId);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        const targetX = rect.left + rect.width / 2;
-        const targetY = rect.top + rect.height / 2 - 20;
-        await controls.start({
-          x: targetX,
-          y: targetY,
-          scale: 1.5,
-          transition: { type: "spring", stiffness: 80, damping: 14 },
-        });
-        await controls.start({
-          scale: [1.5, 2.05, 1.45],
-          transition: { duration: 0.45 },
-        });
-        await new Promise((r) => setTimeout(r, 700));
-      } else {
-        await controls.start({
-          x: startX + (Math.random() - 0.5) * 120,
-          y: window.innerHeight - (600 + Math.random() * 160),
-          opacity: 0.85,
-          transition: { duration: 1.1 },
-        });
-      }
-
-      if (cancelled) return;
-
-      await controls.start({
-        opacity: 0,
-        scale: 0.2,
-        transition: { duration: 0.7 },
-      });
-      onDone();
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [controls, sessionId, onDone]);
+  // Calculate final position
+  const finalX = startX + driftX;
+  const finalY = startY + driftY;
 
   return (
-    <motion.img
-      src={svg}
-      animate={controls}
-      initial={{ opacity: 0, scale: 0.25, x: startX, y: startY }}
-      exit={{ opacity: 0 }}
+    <motion.div
+      initial={{
+        x: startX,
+        y: startY,
+        opacity: 0,
+        scale: 0.3,
+        rotate: 0,
+      }}
+      animate={{
+        x: finalX,
+        y: finalY,
+        opacity: [0, 1, 1, 0.8, 0],
+        scale: [0.3, scale * 1.1, scale, scale * 0.95, 0.2],
+        rotate: rotation,
+      }}
+      exit={{
+        opacity: 0,
+        scale: 0.1,
+        transition: { duration: 0.3 },
+      }}
+      transition={{
+        duration,
+        ease: [0.16, 1, 0.3, 1], // Custom easing for smooth float
+        opacity: {
+          times: [0, 0.1, 0.7, 0.9, 1],
+          duration,
+        },
+        scale: {
+          times: [0, 0.15, 0.5, 0.85, 1],
+          duration,
+        },
+      }}
+      onAnimationComplete={onComplete}
       style={{
         position: "fixed",
-        width: 52,
-        height: 52,
         transform: "translate(-50%, -50%)",
         pointerEvents: "none",
         zIndex: 9999,
-        filter: `drop-shadow(0 8px 18px ${glow})`,
+        willChange: "transform, opacity",
       }}
-    />
+    >
+      {svg ? (
+        <img
+          src={svg}
+          alt={emoji}
+          style={{
+            width: 56,
+            height: 56,
+            filter: `drop-shadow(0 4px 20px ${glow}) drop-shadow(0 0 8px ${glow})`,
+            userSelect: "none",
+          }}
+          draggable={false}
+        />
+      ) : (
+        <span
+          style={{
+            fontSize: 56,
+            lineHeight: 1,
+            filter: `drop-shadow(0 4px 20px ${glow}) drop-shadow(0 0 8px ${glow})`,
+            userSelect: "none",
+          }}
+        >
+          {emoji}
+        </span>
+      )}
+    </motion.div>
   );
 }
 
