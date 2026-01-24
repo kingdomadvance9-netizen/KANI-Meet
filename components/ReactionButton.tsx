@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import ReactionPopup from "./ReactionPopup";
-import { AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -103,7 +103,7 @@ const ReactionButton: React.FC<Props> = ({
   return (
     <div ref={containerRef} className={cn("relative inline-block", className)}>
       {/* Reaction Button */}
-      <button
+      <motion.button
         ref={buttonRef}
         onClick={(e) => {
           console.log("[ReactionButton] button clicked, current open:", open);
@@ -115,18 +115,50 @@ const ReactionButton: React.FC<Props> = ({
         aria-expanded={open}
         aria-label="Open reactions menu"
         title="Reactions"
+        whileHover={{
+          scale: 1.05,
+          transition: { duration: 0.2, ease: "easeOut" },
+        }}
+        whileTap={{
+          scale: 0.95,
+          transition: { duration: 0.1 },
+        }}
         className={cn(
-          "p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-200 touch-manipulation active:scale-95",
+          "relative p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl transition-all duration-300 touch-manipulation",
+          "focus:outline-none focus:ring-2 focus:ring-blue-400/70 focus:ring-offset-2 focus:ring-offset-dark-1",
           open
-            ? "bg-blue-500 text-white"
-            : "bg-dark-3 text-gray-300 hover:bg-dark-4",
-          "focus:outline-none focus:ring-2 focus:ring-blue-400"
+            ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30"
+            : "bg-dark-3 text-gray-300 hover:bg-dark-4 hover:shadow-md"
         )}
+        style={{
+          boxShadow: open
+            ? "0 4px 20px rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)"
+            : "0 2px 8px rgba(0, 0, 0, 0.2)",
+        }}
       >
-        <span className="text-lg sm:text-xl" aria-hidden>
+        {/* Ripple effect on click */}
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              initial={{ scale: 0, opacity: 0.6 }}
+              animate={{ scale: 2, opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="absolute inset-0 rounded-lg sm:rounded-xl bg-blue-400/40"
+              style={{ pointerEvents: "none" }}
+            />
+          )}
+        </AnimatePresence>
+
+        <motion.span
+          className="text-lg sm:text-xl relative z-10"
+          aria-hidden
+          animate={open ? { rotate: [0, -10, 10, 0] } : { rotate: 0 }}
+          transition={{ duration: 0.4 }}
+        >
           😊
-        </span>
-      </button>
+        </motion.span>
+      </motion.button>
 
       {/* Reaction Popup - Rendered via Portal */}
       {open &&
