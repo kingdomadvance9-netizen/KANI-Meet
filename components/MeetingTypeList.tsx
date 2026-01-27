@@ -46,14 +46,34 @@ const MeetingTypeList = () => {
       // 1. Generate a unique ID locally
       const id = crypto.randomUUID();
 
-      // 2. PHASE 6: Save meeting metadata to YOUR database
-      // Example: await fetch('/api/meetings', {
-      //   method: 'POST',
-      //   body: JSON.stringify({ id, userId: user.id, description: values.description, startsAt: values.dateTime })
-      // });
-
-      // ✅ NEW: Store created meeting in localStorage to track ownership
+      // 2. ✅ CRITICAL FIX: Save meeting to database BEFORE joining
+      // This ensures the creator is established in the database before any join events
       try {
+        const apiUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080";
+        const response = await fetch(`${apiUrl}/api/meetings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id,
+            userId: user.id,
+            description: values.description || "Instant Meeting",
+            startsAt: values.dateTime,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("❌ Failed to create meeting in database:", errorData);
+          toast.error("Failed to create meeting in database");
+          return;
+        }
+
+        const data = await response.json();
+        console.log("✅ Meeting created in database:", data);
+
+        // Also store in localStorage for offline detection
         const createdMeetings = JSON.parse(
           localStorage.getItem("created-meetings") || "[]"
         );
@@ -67,9 +87,11 @@ const MeetingTypeList = () => {
           "created-meetings",
           JSON.stringify(createdMeetings)
         );
-        console.log("✅ Stored meeting creation:", id, "by", user.id);
+        console.log("✅ Meeting also stored in localStorage for backup");
       } catch (err) {
-        console.error("Failed to store meeting in localStorage:", err);
+        console.error("❌ Error creating meeting:", err);
+        toast.error("Failed to create meeting - please try again");
+        return;
       }
 
       setGeneratedMeetingId(id);
