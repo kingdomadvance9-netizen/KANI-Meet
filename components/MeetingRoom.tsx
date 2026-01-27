@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Users, Settings } from "lucide-react";
@@ -38,6 +38,7 @@ const MeetingRoom = () => {
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [visibleNotifications, setVisibleNotifications] = useState<ReceivedMessage[]>([]);
+  const shownMessageIdsRef = useRef<Set<string>>(new Set());
   const MAX_VISIBLE_NOTIFICATIONS = 3;
 
   // Get meeting metadata to determine creator
@@ -66,20 +67,44 @@ const MeetingRoom = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, isInitialized, user?.id, roomId, call]);
 
-  // Manage notification stack - show up to 3 recent messages
+  // Manage notification stack - APPEND new messages only
   useEffect(() => {
     if (showChat) {
       // Clear all notifications when chat is opened
       setVisibleNotifications([]);
+      shownMessageIdsRef.current = new Set();
       return;
     }
 
-    if (unreadMessages.length > 0) {
-      // Get the last 3 unread messages for display
-      const recentMessages = unreadMessages.slice(-MAX_VISIBLE_NOTIFICATIONS);
-      setVisibleNotifications(recentMessages);
-    } else {
+    if (unreadMessages.length === 0) {
       setVisibleNotifications([]);
+      shownMessageIdsRef.current = new Set();
+      return;
+    }
+
+    // Find NEW messages that haven't been shown yet
+    const newMessages = unreadMessages.filter(
+      (msg) => !shownMessageIdsRef.current.has(msg.message.id)
+    );
+
+    if (newMessages.length > 0) {
+      setVisibleNotifications((prev) => {
+        // Append new messages
+        const updated = [...prev, ...newMessages];
+
+        // Keep only the last MAX_VISIBLE_NOTIFICATIONS
+        // Remove from the FRONT (oldest messages)
+        if (updated.length > MAX_VISIBLE_NOTIFICATIONS) {
+          return updated.slice(-MAX_VISIBLE_NOTIFICATIONS);
+        }
+
+        return updated;
+      });
+
+      // Track these messages as shown (using ref - doesn't trigger re-render)
+      newMessages.forEach((msg) => {
+        shownMessageIdsRef.current.add(msg.message.id);
+      });
     }
   }, [unreadMessages, showChat]);
 
@@ -87,11 +112,13 @@ const MeetingRoom = () => {
     setVisibleNotifications((prev) =>
       prev.filter((msg) => msg.message.id !== messageId)
     );
+    // Don't remove from shownMessageIdsRef - we want to remember it was shown
   };
 
   const handleNotificationClick = () => {
     setShowChat(true);
     setVisibleNotifications([]);
+    shownMessageIdsRef.current = new Set();
   };
 
   return (
@@ -172,22 +199,21 @@ const MeetingRoom = () => {
         </div>
       </div>
 
-      {/* Message Notifications Stack - Up to 3 visible */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2">
+      {/* Message Notifications Stack - Desktop: LEFT, Mobile: BOTTOM */}
+      <div className="fixed bottom-20 left-4 md:top-4 md:bottom-auto md:left-4 z-[100] flex flex-col gap-2 max-w-[calc(100vw-2rem)] md:max-w-none">
         <AnimatePresence mode="popLayout">
-          {visibleNotifications.map((notification, index) => (
+          {visibleNotifications.map((notification) => (
             <MessageNotification
               key={notification.message.id}
               message={notification}
-              index={index}
               onClose={() => handleNotificationClose(notification.message.id)}
               onClick={handleNotificationClick}
             />
           ))}
         </AnimatePresence>
         {/* Unread count indicator if there are more than 3 */}
-        {unreadCount > MAX_VISIBLE_NOTIFICATIONS && (
-          <div className="w-[300px] md:w-[360px] bg-dark-3/80 border border-white/10 rounded-lg px-3 py-2 text-center text-xs text-gray-300 backdrop-blur-sm">
+        {unreadCount > MAX_VISIBLE_NOTIFICATIONS && visibleNotifications.length > 0 && (
+          <div className="w-full md:w-[360px] bg-dark-3/90 border border-white/10 rounded-lg px-3 py-2 text-center text-xs text-gray-300 backdrop-blur-md">
             + {unreadCount - MAX_VISIBLE_NOTIFICATIONS} more message
             {unreadCount - MAX_VISIBLE_NOTIFICATIONS > 1 ? "s" : ""}
           </div>
