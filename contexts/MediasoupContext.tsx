@@ -258,22 +258,36 @@ export const MediasoupProvider = ({
         });
 
         // ✅ NEW: Extract current user's media state from participant list
-        // This ensures local state stays synchronized with backend
+        // ONLY sync on first load (initial join) to restore previous state
+        // Don't sync on subsequent updates to avoid overriding user's manual choices
         const currentUserId = currentUserIdRef.current;
-        if (currentUserId) {
+        if (currentUserId && isInitialParticipantListRef.current) {
           const currentUser = updatedList.find((p) => p.id === currentUserId);
           if (currentUser) {
-            console.log("🔄 Syncing local state with backend:", {
+            console.log("🔄 Initial sync - restoring media state from backend:", {
               isAudioMuted: currentUser.isAudioMuted,
               isVideoPaused: currentUser.isVideoPaused,
               audioLocked: currentUser.audioLocked,
               screenShareLocked: currentUser.screenShareLocked,
             });
 
-            // Update local media state to match backend
+            // Only sync media state on initial load (for state restoration)
+            // Don't override user's current choices on subsequent updates
             setIsAudioMuted(currentUser.isAudioMuted);
             setIsVideoEnabled(!currentUser.isVideoPaused);
 
+            // Update host/cohost status (always sync this)
+            if (currentUser.isHost !== undefined) {
+              setIsHost(currentUser.isHost);
+            }
+            if (currentUser.isCoHost !== undefined) {
+              setIsCoHost(currentUser.isCoHost);
+            }
+          }
+        } else if (currentUserId) {
+          // On subsequent updates, only update host/cohost status, not media state
+          const currentUser = updatedList.find((p) => p.id === currentUserId);
+          if (currentUser) {
             // Update host/cohost status if changed
             if (currentUser.isHost !== undefined) {
               setIsHost(currentUser.isHost);
@@ -1097,20 +1111,8 @@ export const MediasoupProvider = ({
         setIsCoHost(backendIsCoHost);
       }
 
-      // ✅ NEW: Apply persisted media state from backend (authoritative)
-      if (mediaState) {
-        console.log("📊 Applying persisted media state from backend:", mediaState);
-        setIsAudioMuted(mediaState.isAudioMuted);
-        setIsVideoEnabled(!mediaState.isVideoPaused);
-        // Store lock states for UI
-        if (mediaState.audioLocked !== undefined) {
-          // You can add a state for audioLocked if needed
-          console.log("🔒 Audio locked:", mediaState.audioLocked);
-        }
-        if (mediaState.screenShareLocked !== undefined) {
-          console.log("🔒 Screen share locked:", mediaState.screenShareLocked);
-        }
-      }
+      // NOTE: Media state will be applied later when starting media producers
+      // This ensures state is synchronized with actual media activation
 
       console.log(
         "🎉 Joined mediasoup room, existing producers:",
@@ -1239,9 +1241,8 @@ export const MediasoupProvider = ({
         }
       } catch (error) {
         console.error("Failed to initialize media:", error);
-        // Fallback: start audio only
-        await startAudio();
-        setIsAudioMuted(false);
+        // ❌ DON'T auto-start media on error - respect user's choice to stay off
+        console.log("⚠️ Media initialization failed, leaving media off");
       }
     } catch (error) {
       console.error("❌ Failed to join room:", error);
