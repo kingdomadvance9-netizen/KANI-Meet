@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 
 // ✅ Define a simple interface for your meeting metadata
 export interface MeetingRoom {
@@ -13,6 +14,7 @@ export interface MeetingRoom {
 export const useGetCallById = (id: string | string[]) => {
   const [call, setCall] = useState<MeetingRoom | null>(null);
   const [isCallLoading, setIsCallLoading] = useState(true);
+  const { user } = useUser();
 
   useEffect(() => {
     // Ensure we have a string ID
@@ -25,12 +27,36 @@ export const useGetCallById = (id: string | string[]) => {
         // const response = await fetch(`/api/meetings/${roomId}`);
         // const data = await response.json();
 
-        // Mocking a successful fetch for now so your UI doesn't break
+        // ✅ NEW: Check localStorage to see if current user created this meeting
+        let createdBy = "unknown";
+        let description = "Meeting";
+        try {
+          const createdMeetings = JSON.parse(
+            localStorage.getItem("created-meetings") || "[]"
+          );
+          const meeting = createdMeetings.find((m: any) => m.id === roomId);
+          if (meeting) {
+            createdBy = meeting.createdBy;
+            description = meeting.description || "Meeting";
+            console.log("✅ Found meeting in localStorage:", {
+              roomId,
+              createdBy,
+              isCurrentUser: user?.id === createdBy,
+            });
+          } else {
+            console.log(
+              "ℹ️ Meeting not found in localStorage, treating as joined meeting"
+            );
+          }
+        } catch (err) {
+          console.error("Failed to read created meetings from localStorage:", err);
+        }
+
         const mockCall: MeetingRoom = {
           id: roomId,
-          description: "Mediasoup Meeting",
+          description,
           startsAt: new Date().toISOString(),
-          createdBy: "REPLACE_WITH_ACTUAL_CREATOR_ID", // ⚠️ TODO: Set this from your database
+          createdBy, // ✅ Now using actual creator ID from localStorage
         };
 
         setCall(mockCall);
@@ -42,7 +68,7 @@ export const useGetCallById = (id: string | string[]) => {
     };
 
     loadCall();
-  }, [id]);
+  }, [id, user?.id]);
 
   return { call, isCallLoading };
 };

@@ -52,6 +52,26 @@ const MeetingTypeList = () => {
       //   body: JSON.stringify({ id, userId: user.id, description: values.description, startsAt: values.dateTime })
       // });
 
+      // ✅ NEW: Store created meeting in localStorage to track ownership
+      try {
+        const createdMeetings = JSON.parse(
+          localStorage.getItem("created-meetings") || "[]"
+        );
+        createdMeetings.push({
+          id,
+          createdBy: user.id,
+          createdAt: new Date().toISOString(),
+          description: values.description || "Instant Meeting",
+        });
+        localStorage.setItem(
+          "created-meetings",
+          JSON.stringify(createdMeetings)
+        );
+        console.log("✅ Stored meeting creation:", id, "by", user.id);
+      } catch (err) {
+        console.error("Failed to store meeting in localStorage:", err);
+      }
+
       setGeneratedMeetingId(id);
 
       // 3. If it's an instant meeting, go straight to the room

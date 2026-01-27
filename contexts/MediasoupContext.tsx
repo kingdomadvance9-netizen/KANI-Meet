@@ -83,7 +83,9 @@ export const MediasoupProvider = ({
   const [localScreenStream, setLocalScreenStream] =
     useState<MediaStream | null>(null);
 
-  // Media States - Initialize based on localStorage preference
+  // Media States - Initialize with defaults (backend will override on join)
+  // NOTE: Backend is the single source of truth for media state persistence
+  // This initial state is just a placeholder until backend sends authoritative state
   const getInitialMediaState = () => {
     try {
       const storedPref = localStorage.getItem("meeting-join-preference");
@@ -255,6 +257,33 @@ export const MediasoupProvider = ({
           return updatedList;
         });
 
+        // ✅ NEW: Extract current user's media state from participant list
+        // This ensures local state stays synchronized with backend
+        const currentUserId = currentUserIdRef.current;
+        if (currentUserId) {
+          const currentUser = updatedList.find((p) => p.id === currentUserId);
+          if (currentUser) {
+            console.log("🔄 Syncing local state with backend:", {
+              isAudioMuted: currentUser.isAudioMuted,
+              isVideoPaused: currentUser.isVideoPaused,
+              audioLocked: currentUser.audioLocked,
+              screenShareLocked: currentUser.screenShareLocked,
+            });
+
+            // Update local media state to match backend
+            setIsAudioMuted(currentUser.isAudioMuted);
+            setIsVideoEnabled(!currentUser.isVideoPaused);
+
+            // Update host/cohost status if changed
+            if (currentUser.isHost !== undefined) {
+              setIsHost(currentUser.isHost);
+            }
+            if (currentUser.isCoHost !== undefined) {
+              setIsCoHost(currentUser.isCoHost);
+            }
+          }
+        }
+
         // Mark that initial participant list has been loaded
         isInitialParticipantListRef.current = false;
 
@@ -355,7 +384,7 @@ export const MediasoupProvider = ({
     socketInstance.on(
       "participant-state-changed",
       ({
-        userId,
+        userId: changedUserId,
         isAudioMuted,
         isVideoPaused,
       }: {
@@ -364,13 +393,15 @@ export const MediasoupProvider = ({
         isVideoPaused?: boolean;
       }) => {
         console.log("🔄 Participant state changed:", {
-          userId,
+          userId: changedUserId,
           isAudioMuted,
           isVideoPaused,
         });
+
+        // Update participants list
         setParticipants((prev) =>
           prev.map((p) =>
-            p.id === userId
+            p.id === changedUserId
               ? {
                   ...p,
                   ...(isAudioMuted !== undefined && { isAudioMuted }),
@@ -379,6 +410,18 @@ export const MediasoupProvider = ({
               : p
           )
         );
+
+        // ✅ NEW: If this is the current user, update local state too
+        // This handles cases where host remotely changes our media state
+        if (changedUserId === currentUserIdRef.current) {
+          console.log("🔄 Current user's state changed remotely by host");
+          if (isAudioMuted !== undefined) {
+            setIsAudioMuted(isAudioMuted);
+          }
+          if (isVideoPaused !== undefined) {
+            setIsVideoEnabled(!isVideoPaused);
+          }
+        }
       }
     );
 
@@ -438,6 +481,33 @@ export const MediasoupProvider = ({
       toast.info(`${by} removed your host status`);
       setIsHost(false);
     });
+
+    // ✅ NEW: Listen for role changes (e.g., when creator joins and demotes others)
+    socketInstance.on(
+      "role-changed",
+      ({ role, reason }: { role: string; reason?: string }) => {
+        console.log(`🔄 Your role was changed to ${role}`, reason);
+
+        // Update local state based on new role
+        if (role === "HOST") {
+          setIsHost(true);
+          setIsCoHost(false);
+          toast.success(
+            reason || "You are now the host"
+          );
+        } else if (role === "COHOST") {
+          setIsHost(false);
+          setIsCoHost(true);
+          toast.info(reason || "You are now a co-host");
+        } else if (role === "PARTICIPANT") {
+          setIsHost(false);
+          setIsCoHost(false);
+          toast.info(
+            reason || "Your role has been changed to participant"
+          );
+        }
+      }
+    );
 
     // ✅ Listen for video reactions from other participants
     socketInstance.on(
@@ -918,6 +988,7 @@ export const MediasoupProvider = ({
       socketInstance.off("producer-closed");
       socketInstance.off("new-producer");
       socketInstance.off("receive-video-reaction");
+      socketInstance.off("role-changed"); // ✅ NEW: Cleanup role-changed listener
     };
   }, []);
 
@@ -988,6 +1059,7 @@ export const MediasoupProvider = ({
         existingProducers,
         isHost: backendIsHost,
         isCoHost: backendIsCoHost,
+        mediaState, // ✅ NEW: Persisted media state from backend
       } = await new Promise<any>((resolve, reject) => {
         socket.emit(
           "join-mediasoup-room",
@@ -1007,6 +1079,7 @@ export const MediasoupProvider = ({
                 isHost: response.isHost,
                 isCoHost: response.isCoHost,
                 existingProducers: response.existingProducers?.length,
+                mediaState: response.mediaState, // ✅ NEW: Log media state
               });
               resolve(response);
             }
@@ -1022,6 +1095,21 @@ export const MediasoupProvider = ({
       if (backendIsCoHost !== undefined) {
         console.log("🤝 Setting isCoHost from backend:", backendIsCoHost);
         setIsCoHost(backendIsCoHost);
+      }
+
+      // ✅ NEW: Apply persisted media state from backend (authoritative)
+      if (mediaState) {
+        console.log("📊 Applying persisted media state from backend:", mediaState);
+        setIsAudioMuted(mediaState.isAudioMuted);
+        setIsVideoEnabled(!mediaState.isVideoPaused);
+        // Store lock states for UI
+        if (mediaState.audioLocked !== undefined) {
+          // You can add a state for audioLocked if needed
+          console.log("🔒 Audio locked:", mediaState.audioLocked);
+        }
+        if (mediaState.screenShareLocked !== undefined) {
+          console.log("🔒 Screen share locked:", mediaState.screenShareLocked);
+        }
       }
 
       console.log(
@@ -1100,37 +1188,58 @@ export const MediasoupProvider = ({
 
       setIsInitialized(true);
 
-      // Step 8: Check localStorage preference for initial media state
+      // Step 8: Start media based on BACKEND STATE (not localStorage)
+      // Backend is the single source of truth for media state persistence
       try {
-        const storedPref = localStorage.getItem("meeting-join-preference");
-        const preference = storedPref
-          ? JSON.parse(storedPref)
-          : { audio: true, video: false };
+        // ✅ Priority 1: Use backend media state (for rejoins)
+        if (mediaState) {
+          console.log("🎯 Using BACKEND media state (authoritative):", mediaState);
 
-        console.log("📋 Join preference from localStorage:", preference);
+          // Start audio if backend says it should be ON (not muted) and not locked
+          if (!mediaState.isAudioMuted && !mediaState.audioLocked) {
+            console.log("🎤 Starting audio (backend state: not muted)");
+            await startAudio();
+          } else {
+            console.log("🔇 Skipping audio (backend state: muted or locked)");
+          }
 
-        // Start audio/video based on user's saved preference
-        if (preference.audio) {
-          await startAudio();
-          // Audio producer created, set state to not muted
-          setIsAudioMuted(false);
+          // Start video if backend says it should be ON (not paused)
+          if (!mediaState.isVideoPaused) {
+            console.log("📹 Starting video (backend state: not paused)");
+            await enableVideo();
+          } else {
+            console.log("📹 Skipping video (backend state: paused)");
+          }
         } else {
-          console.log("🔇 Skipping audio - user preference is OFF");
-          // No audio producer, set state to muted (effectively off)
-          setIsAudioMuted(true);
-        }
+          // ✅ Priority 2: Use localStorage (for first join only)
+          console.log("📋 No backend state - using localStorage preferences (first join)");
 
-        if (preference.video) {
-          await enableVideo();
-          // Video producer created, state already set in enableVideo
-        } else {
-          console.log("📹 Skipping video - user preference is OFF");
-          // No video producer, ensure state is disabled
-          setIsVideoEnabled(false);
+          const storedPref = localStorage.getItem("meeting-join-preference");
+          const preference = storedPref
+            ? JSON.parse(storedPref)
+            : { audio: true, video: false };
+
+          console.log("📋 Join preference from localStorage:", preference);
+
+          // Start audio/video based on user's saved preference
+          if (preference.audio) {
+            await startAudio();
+            setIsAudioMuted(false);
+          } else {
+            console.log("🔇 Skipping audio - user preference is OFF");
+            setIsAudioMuted(true);
+          }
+
+          if (preference.video) {
+            await enableVideo();
+          } else {
+            console.log("📹 Skipping video - user preference is OFF");
+            setIsVideoEnabled(false);
+          }
         }
       } catch (error) {
-        console.error("Failed to read localStorage preference:", error);
-        // Fallback: start audio only (previous behavior)
+        console.error("Failed to initialize media:", error);
+        // Fallback: start audio only
         await startAudio();
         setIsAudioMuted(false);
       }
